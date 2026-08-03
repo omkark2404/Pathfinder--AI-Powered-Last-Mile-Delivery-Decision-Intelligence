@@ -1,0 +1,36 @@
+# Secrets
+.env
+
+# macOS artifacts
+.DS_Store
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache / compiled
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Test cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local database artifacts — never commit these
+*.db
+*.duckdb
+
+# Node / frontend
+node_modules/
+.next/
+out/
+dist/
+
+# Build artifacts
+*.egg-info/
+build/
