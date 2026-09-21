@@ -17,7 +17,7 @@ The platform is designed around two real public logistics research datasets:
 - **License**: CC BY 4.0
 - **Attributes Used**: Planned route sequences vs actual driver sequences, travel distance, duration, time-window data.
 - **Usage**: Benchmark for sequence deviation prediction, driver adherence analytics, and Kendall Tau similarity index.
-- **Committed Dataset**: Bundled at `./data/mendeley_planned_vs_actual.csv`.
+- **Committed Dataset**: A schema-compliant synthetic benchmark fixture (30 routes, 603 stops) is bundled at `./data/mendeley_planned_vs_actual.csv` for offline verification and local testing. The actual Mendeley dataset can be downloaded from the DOI link above for production model training.
 
 ## Synthetic Data Policy
 

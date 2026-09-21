@@ -37,6 +37,13 @@ async def lifespan(app: FastAPI):
             "Set a strong SECRET_KEY environment variable before deploying to production."
         )
 
+    # Warn when running with wildcard CORS in development mode
+    if "*" in settings.get_allowed_origins():
+        print(
+            "WARNING: CORS ALLOWED_ORIGINS contains '*'. "
+            "Set explicit origins (e.g. ALLOWED_ORIGINS=https://app.domain.com) for production."
+        )
+
     # Load sample datasets on first startup only so the app is immediately
     # interactive out-of-the-box.  Subsequent restarts skip ingestion to
     # prevent duplicate datasets / routes / drivers.
