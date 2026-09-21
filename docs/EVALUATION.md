@@ -2,9 +2,15 @@
 
 ## 1. Overview & Evaluation Methodology
 
+> [!CAUTION]
+> **PRELIMINARY EVALUATION NOTICE**
+> The metrics reported below (MAE, precision, recall, etc.) were computed on a very small committed benchmark sample (13 Amazon routes, and a 30-route *synthetic fixture* mimicking the Mendeley dataset). These results **must not** be treated as production-representative. They serve only to validate the end-to-end ML pipeline execution.
+> 
+> Before deploying or making business claims, the models **must be re-validated** against the full datasets (the 9,184 Amazon routes and the authentic Mendeley download). You can automate this process using `make eval-full` from the project root.
+
 Pathfinder utilizes a decoupled dual-model architecture evaluated on real logistics benchmark datasets:
 1. **Amazon Last Mile Routing Research Challenge Sample** (13 regional routes, 200+ stops)
-2. **Planned vs Actual Route Deviations Dataset** (DOI: 10.17632/kkwgfvmtxn.1, 30 routes, 603 delivery stops)
+2. **Planned vs Actual Route Deviations Dataset** (Synthetic 30-route fixture mimicking DOI: 10.17632/kkwgfvmtxn.1)
 
 Evaluation splits are conducted chronologically (temporal split: earlier delivery dates for training, later dates for testing) to prevent temporal target leakage.
 

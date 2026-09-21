@@ -11,6 +11,25 @@
 
 ---
 
+## ⚡ Quick Start (60 Seconds)
+
+**Live Demo (Backend API)**: The backend is continuously deployed via Render at `https://pathfinder-api.onrender.com/docs`. (Note: Free tier spins down after inactivity; initial request may take 50s).
+
+### Local Setup
+Spin up the entire stack (FastAPI backend + Next.js frontend + DuckDB) immediately with Docker:
+
+```bash
+git clone https://github.com/omkark2404/Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence.git
+cd Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence
+docker-compose up --build
+```
+* **Frontend Dashboard**: `http://localhost:3000`
+* **Backend API Docs**: `http://localhost:8000/docs`
+
+> **Note:** The application comes pre-bundled with a benchmark dataset. It will automatically initialize, ingest the data, and become interactive out-of-the-box.
+
+---
+
 ## 1. Problem Statement
 
 Last-mile delivery is the most expensive and operationally uncertain segment of logistics. Dispatchers typically face:

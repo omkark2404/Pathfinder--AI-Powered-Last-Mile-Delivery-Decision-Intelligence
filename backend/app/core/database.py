@@ -1,8 +1,11 @@
 import os
+import logging
 import duckdb
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Base declarative class for SQLAlchemy ORM models
 Base = declarative_base()
@@ -35,7 +38,7 @@ def _resolve_database_url() -> str:
     # Detect if pointing to Docker host 'db' while running outside Docker container
     is_docker = os.path.exists("/.dockerenv") or os.environ.get("IS_DOCKER") == "true"
     if "@db:" in raw_url and not is_docker:
-        print("Database Notice: Host 'db:5432' configured for Docker. Running outside Docker — falling back to local SQLite.")
+        logger.warning("Database Notice: Host 'db:5432' configured for Docker. Running outside Docker — falling back to local SQLite.")
         return sqlite_fallback_url
 
     return raw_url

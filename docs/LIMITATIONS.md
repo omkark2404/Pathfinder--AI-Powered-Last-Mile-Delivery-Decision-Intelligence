@@ -2,9 +2,13 @@
 
 ## Known Limitations
 
-### 1. Benchmark Sample Included vs. Full Production Ingestion
+### 1. Preliminary ML Metrics vs. Full Production Ingestion
 
-The repository includes a 13-route benchmark sample (`amazon_last_mile_sample.json`) and a 30-route planned-vs-actual dataset (`mendeley_planned_vs_actual.csv`) to enable immediate out-of-the-box operation and automated testing.
+> [!CAUTION]
+> **PRELIMINARY EVALUATION NOTICE**
+> The metrics reported in the evaluation documentation are computed on a very small committed benchmark sample (13 Amazon routes, and a 30-route *synthetic fixture* mimicking the Mendeley dataset). These results **must not** be treated as production-representative. Before deploying or making business claims, the models **must be re-validated** against the full datasets (the 9,184 Amazon routes and the authentic Mendeley download) using `make eval-full`.
+
+The repository includes a 13-route benchmark sample (`amazon_last_mile_sample.json`) and a 30-route synthetic planned-vs-actual dataset (`mendeley_planned_vs_actual.csv`) to enable immediate out-of-the-box operation and automated testing.
 The full 9,184-route Amazon Last Mile dataset is not bundled due to GitHub repository size limits and must be downloaded from AWS Open Data Registry for large-scale training.
 
 When dataset files are absent, the application gracefully operates in **synthetic_demo** mode using an in-memory test fixture clearly labeled (`is_synthetic=True` on Dataset records, `data_mode="synthetic_demo"` in the ML model API).

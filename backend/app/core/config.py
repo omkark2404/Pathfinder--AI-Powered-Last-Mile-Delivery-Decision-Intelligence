@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = "development"
 
     # SECRET_KEY: used for session signing and HMAC verification.
     # Must be set to a strong random value in production.
