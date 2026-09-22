@@ -11,9 +11,10 @@
 
 ---
 
-## ⚡ Quick Start (60 Seconds)
+## ⚡ Quick Start (Live Demo)
 
-**Live Demo (Backend API)**: The backend is continuously deployed via Render at `https://pathfinder-api.onrender.com/docs`. (Note: Free tier spins down after inactivity; initial request may take 50s).
+- 🌐 **Live Dashboard (Frontend)**: [https://pathfinder-ai-powered-last-mile-delivery.vercel.app](https://pathfinder-ai-powered-last-mile-delivery.vercel.app) *(Note: Please update this link if your Vercel URL differs slightly)*
+- ⚙️ **Live Backend API (Swagger)**: [https://pathfinder-ai-powered-last-mile-delivery.onrender.com/docs](https://pathfinder-ai-powered-last-mile-delivery.onrender.com/docs) *(Note: Render free tier spins down after inactivity; initial API request may take ~50s to wake up).*
 
 ### Local Setup
 Spin up the entire stack (FastAPI backend + Next.js frontend + DuckDB) immediately with Docker:
