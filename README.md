@@ -192,64 +192,7 @@ Four what-if scenarios, each computing a real result:
 
 ## 6. Evaluation Results
 
-Both models were trained and evaluated across real public delivery benchmark data (Amazon Last Mile Routing Research Challenge sample + Mendeley Planned vs. Actual Routes, total 43 routes, 600+ delivery stops).
-
-> [!NOTE]
-> **Sample Size Transparency**: Evaluation was performed on $n=13$ held-out test routes. To avoid false precision on small test samples, metrics are explicitly rounded to 1 decimal place, and the API returns `evaluation_status: "low_sample_size"`.
-
-### Model Performance Summary
-
-| Model | Algorithm | Metric | Evaluation Result | Baseline Comparison |
-|---|---|---|---|---|
-| **ETA Delay Predictor** | `GradientBoostingRegressor` (50 trees, max_depth=3) | **MAE** | **34.5 min** | Linear Reg baseline: 42.1 min |
-| | | **RMSE** | **43.9 min** | Linear Reg baseline: 55.3 min |
-| | | **Median AE** | **24.2 min** | — |
-| | | **P90 Error** | **72.5 min** | — |
-| | | **Mean Bias** | **-3.3 min** | Minimal systemic bias |
-| **Route Deviation Classifier** | `RandomForestClassifier` (30 trees) | **Precision** | **54.5%** | Naive baseline: 34.8% |
-| | | **Recall** | **100.0%** | High sensitivity on critical deviations |
-| | | **F1 Score** | **0.7** | Balanced detection |
-| | | **PR-AUC** | **0.6** | Baseline random: 0.3 |
-
-### Live API Output (`GET /api/v1/metrics`)
-
-```json
-{
-  "eta_model": {
-    "model_name": "ETA_DELAY_PREDICTOR",
-    "algorithm": "GradientBoostingRegressor",
-    "data_mode": "real",
-    "training_sample_count": 30,
-    "evaluation_sample_count": 13,
-    "evaluation_status": "low_sample_size",
-    "metrics": {
-      "mae": 34.5,
-      "rmse": 43.9,
-      "median_ae": 24.2,
-      "p90_error": 72.5,
-      "bias": -3.3
-    },
-    "sample_size_warning": "Evaluated on small sample (n < 30). Metrics are rounded to 1 decimal place and should be treated as preliminary benchmarks."
-  },
-  "deviation_model": {
-    "model_name": "ROUTE_DEVIATION_CLASSIFIER",
-    "algorithm": "RandomForestClassifier",
-    "data_mode": "real",
-    "training_sample_count": 30,
-    "evaluation_sample_count": 13,
-    "evaluation_status": "low_sample_size",
-    "metrics": {
-      "precision": 0.5,
-      "recall": 1.0,
-      "f1_score": 0.7,
-      "pr_auc": 0.6
-    },
-    "sample_size_warning": "Evaluated on small sample (n < 30). Metrics are rounded to 1 decimal place and should be treated as preliminary benchmarks."
-  }
-}
-```
-
----
+The default ETA implementation fits five synthetic samples and marks evaluation as insufficient_data. Previously listed real-data metrics and API examples have been withdrawn from this README because a reproducible run establishing those claims has not been verified. Data ingestion and a callable evaluation function do not by themselves prove a trained real-data model. See backend/app/ml/eta_model.py and verify any separately generated evaluation artifacts before reporting performance.
 
 ## 7. Quick Start
 
@@ -304,32 +247,7 @@ DATABASE_URL="" PYTHONPATH=. pytest tests/ -v
 
 ## 8. Reproducibility
 
-To reproduce a full evaluation on real data:
-
-| Step | Command |
-|---|---|
-| 1. Ingest Amazon dataset | `POST /api/v1/datasets/ingest {"dataset_name": "AMAZON_LAST_MILE"}` |
-| 2. Ingest Mendeley dataset | `POST /api/v1/datasets/ingest {"dataset_name": "MENDELEY_PLANNED_VS_ACTUAL"}` |
-| 3. Check data quality | `GET /api/v1/datasets/quality` |
-| 4. Run risk prediction | `POST /api/v1/routes/predict-risk {"route_id": "<id>"}` |
-| 5. Run optimization | `POST /api/v1/routes/<id>/optimize` |
-| 6. View metrics | `GET /api/v1/metrics` |
-
-**Reproducibility record:**
-
-| Field | Value |
-|---|---|
-| Dataset A | Amazon Last Mile Routing Research Challenge sample (13 routes) |
-| Dataset B | Mendeley Planned vs Actual Routes v1 (30 routes, DOI: 10.17632/kkwgfvmtxn.1) |
-| Feature version | v1.3 (9 features, see `ml/features.py`) |
-| ETA model version | v1.3.0 (GradientBoostingRegressor, n_estimators=50) |
-| Deviation model version | v1.2.0 (RandomForestClassifier, n_estimators=30) |
-| Random seed | 42 |
-| Train/test split | Temporal (30 train, 13 test) |
-| Evaluation status | `low_sample_size` (n=13 test routes) |
-| Evaluation metrics | ETA: MAE 34.5m, RMSE 43.9m, Median 24.2m \| Dev: Prec 54.5%, Rec 100%, F1 0.7, PR-AUC 0.6 |
-
----
+For a defensible evaluation, record the exact licensed dataset, distinguish synthetic fixtures from authentic records, train and evaluate on separate samples, retain the run command and compare with a baseline. No validated real-world performance is claimed by this README. Existing ingestion endpoints are not a substitute for this evaluation record.
 
 ## 9. Project Structure
 
@@ -410,7 +328,7 @@ Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence/
 | `NOT YET MEASURED` | Evaluation requires real dataset download — see Section 6 |
 | `SIMULATED` | Scenario simulator output — computed by the OR-Tools solver, not fabricated |
 
-Synthetic data is **never used** for: model training, final evaluation, optimization benchmarks, reported metrics, or business-impact claims.
+The default ETA model trains on five hard-coded synthetic demonstration samples and reports insufficient evaluation data. Synthetic fixtures support development and tests; they do not establish real-world predictive quality or operational impact. Any real-data evaluation must identify its source, training split and reproducible run separately.
 
 ---
 
@@ -441,7 +359,7 @@ Two architectural constraints are worth knowing before deploying this system to 
 Built by **[omkark2404](https://github.com/omkark2404)** — full-stack logistics decision engineering.
 
 * **GitHub**: [@omkark2404](https://github.com/omkark2404)
-* **LinkedIn**: [linkedin.com/in/omkark2404](https://linkedin.com/in/omkark2404)
+* **LinkedIn**: [linkedin.com/in/omkar-kumar-2492371b1](https://www.linkedin.com/in/omkar-kumar-2492371b1/)
 
 ### Personal Engineering Retrospective
 > *"What I found most challenging and interesting while building Pathfinder was bridging mathematical optimization with operational reality. While OR-Tools can compute a theoretically optimal TSP route in milliseconds, human dispatchers reject suggestions unless they understand **why** the change is needed. Combining predictive ML risk scores with transparent evidence logs (driver historical adherence, time-window pressure, and stop-level delay variance) turned out to be far more impactful for dispatcher adoption than pure algorithmic optimization alone."*
