@@ -22,9 +22,9 @@ class DeliveryAnalytics:
                 total_deliveries=0,
                 on_time_delivery_rate=1.0,
                 late_delivery_rate=0.0,
-                avg_delay_minutes=0.0,
-                p90_delay_minutes=0.0,
-                p95_delay_minutes=0.0,
+                avg_delay_minutes=None,
+                p90_delay_minutes=None,
+                p95_delay_minutes=None,
                 avg_route_efficiency_pct=100.0,
                 route_deviation_rate=0.0,
                 high_risk_routes_count=0,
@@ -41,11 +41,13 @@ class DeliveryAnalytics:
         deliveries = deliv_res.scalars().all()
         total_deliveries = len(deliveries)
 
-        delays = [d.delay_minutes for d in deliveries if d.delay_minutes > 0]
-        avg_delay = float(np.mean(delays)) if delays else 0.0
-        p90_delay = float(np.percentile(delays, 90)) if delays else 0.0
-        p95_delay = float(np.percentile(delays, 95)) if delays else 0.0
+        # Delay stats are None (not 0) when no delivery has a measured delay.
+        delays = [d.delay_minutes for d in deliveries if d.delay_minutes and d.delay_minutes > 0]
+        avg_delay = round(float(np.mean(delays)), 1) if delays else None
+        p90_delay = round(float(np.percentile(delays, 90)), 1) if delays else None
+        p95_delay = round(float(np.percentile(delays, 95)), 1) if delays else None
 
+        # on_time_delivery_rate holds the share of stops visited in planned order (sequence adherence).
         on_time_rates = [m.on_time_delivery_rate for m in metrics] if metrics else [1.0]
         avg_on_time = float(np.mean(on_time_rates))
         late_rate = round(1.0 - avg_on_time, 3)
@@ -54,8 +56,9 @@ class DeliveryAnalytics:
         avg_efficiency = float(np.mean(efficiencies))
 
         # Deviations count
-        deviations_count = sum(1 for r in routes if r.actual_distance_km and r.planned_distance_km and r.actual_distance_km > r.planned_distance_km * 1.1)
-        deviation_rate = round(deviations_count / max(1, total_routes), 3)
+        measured = [r for r in routes if r.actual_distance_km and r.planned_distance_km]
+        deviations_count = sum(1 for r in measured if r.actual_distance_km > r.planned_distance_km * 1.1)
+        deviation_rate = round(deviations_count / max(1, len(measured)), 3)
 
         high_risk_count = sum(1 for m in metrics if m.on_time_delivery_rate < 0.85)
 
@@ -64,9 +67,9 @@ class DeliveryAnalytics:
             total_deliveries=total_deliveries,
             on_time_delivery_rate=round(avg_on_time, 3),
             late_delivery_rate=late_rate,
-            avg_delay_minutes=round(avg_delay, 1),
-            p90_delay_minutes=round(p90_delay, 1),
-            p95_delay_minutes=round(p95_delay, 1),
+            avg_delay_minutes=avg_delay,
+            p90_delay_minutes=p90_delay,
+            p95_delay_minutes=p95_delay,
             avg_route_efficiency_pct=round(avg_efficiency, 1),
             route_deviation_rate=deviation_rate,
             high_risk_routes_count=high_risk_count,

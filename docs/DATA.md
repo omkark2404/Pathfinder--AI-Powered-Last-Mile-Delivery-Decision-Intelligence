@@ -1,33 +1,29 @@
 # Data Provenance & Ingestion Specification — Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence
 
-## Primary Real-World Datasets
+## Datasets
 
-The platform is designed around two real public logistics research datasets:
+The platform is designed around two public logistics research datasets. The repository bundles a real subset of the first and a synthetic stand-in for the second (see `data/README.md`).
 
 ### 1. Amazon Last Mile Routing Research Challenge
-- **Source**: [AWS Open Data Registry](https://registry.opendata.aws/amazon-last-mile-challenges/)
+- **Source**: [Registry of Open Data on AWS](https://registry.opendata.aws/amazon-last-mile-challenges/)
+- **License**: CC BY-NC 4.0
 - **Scope**: 9,184 historical driver routes performed in 2018 across 5 U.S. metropolitan areas.
-- **Attributes Used**: Route sequences, stop locations, service times, package dimensions, depot coordinates.
-- **Committed Sample**: A 13-route benchmark sample is provided in `./data/amazon_last_mile_sample.json` for immediate testing.
-- **Full Dataset Setup**: Download the complete 9,184-route `amazon_last_mile.json` from the official AWS Open Data Registry and place it in `./data/amazon_last_mile.json`.
+- **Attributes used**: stop locations, the station (used as depot), route date, package dimensions, planned service times.
+- **Committed sample**: 13 routes in `./data/amazon_last_mile_sample.json`. It has no actual visit order, distances or durations, which are stored as unknown.
+- **Full dataset setup**: place it at `./data/amazon_last_mile.json`; it is used in preference to the sample.
 
 ### 2. Planned vs Actual Last-Mile Routes
-- **Source**: [Mendeley Data](https://data.mendeley.com/datasets/kkwgfvmtxn)
-- **DOI**: [`10.17632/kkwgfvmtxn.1`](https://doi.org/10.17632/kkwgfvmtxn.1)
-- **License**: CC BY 4.0
-- **Attributes Used**: Planned route sequences vs actual driver sequences, travel distance, duration, time-window data.
-- **Usage**: Benchmark for sequence deviation prediction, driver adherence analytics, and Kendall Tau similarity index.
-- **Committed Dataset**: A schema-compliant synthetic benchmark fixture (30 routes, 603 stops) is bundled at `./data/mendeley_planned_vs_actual.csv` for offline verification and local testing. The actual Mendeley dataset can be downloaded from the DOI link above for production model training.
+- **Source**: [Mendeley Data](https://data.mendeley.com/datasets/kkwgfvmtxn), DOI [`10.17632/kkwgfvmtxn.1`](https://doi.org/10.17632/kkwgfvmtxn.1), CC BY 4.0
+- **Attributes used**: planned vs actual stop sequences, planned vs actual distance and duration.
+- **Committed file**: `./data/mendeley_synthetic_fixture.csv` — a **synthetic** 30-route / 603-stop fixture, ingested with `is_synthetic = True`.
+- **Real dataset setup**: place it at `./data/mendeley_planned_vs_actual.csv`; it is used in preference to the fixture.
 
 ## Synthetic Data Policy
 
-> **IMPORTANT**: Synthetic data is used ONLY as a fallback for schema validation and local UI demonstration when the raw dataset files are absent from `./data/`.
-
-When dataset files are missing:
-- Ingested datasets are explicitly tagged with `is_synthetic = True`.
-- API endpoints report `data_mode = "synthetic_demo"`.
-- ML models report `evaluation_status = "insufficient_data"` and `metrics = null`.
-- Synthetic fixtures are **NEVER** used for model training, final evaluation, reported accuracy metrics, or business impact calculations.
+- The bundled Mendeley-schema fixture and the in-code fallback (used when no files are present) are tagged `is_synthetic = True`.
+- `GET /health` reports `data_mode` (`synthetic_demo`, `bundled_samples` or `public_datasets`) and, per dataset, whether the file is real, synthetic or missing.
+- The offline evaluation (`backend/scripts/train_eval.py`) runs on whatever outcome data exists, which with the bundled files is the synthetic fixture; its output is labeled `evaluated_on_synthetic_data: true` and is a pipeline check only.
+- Values missing from the source (distances, durations, actual order, lateness) are stored as unknown, never replaced with defaults.
 
 ## Ingestion & Quality Validation Pipeline
 

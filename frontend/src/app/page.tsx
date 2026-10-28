@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import Header from '@/components/Header';
-import { fetchApi, OverviewMetrics, RouteItem } from '@/lib/api';
+import { fetchApi, fmt, DATA_MODE_LABELS, OverviewMetrics, RouteItem } from '@/lib/api';
+import { useHealth } from '@/lib/useHealth';
 import Link from 'next/link';
 import {
-  TrendingUp,
   Clock,
   AlertTriangle,
   GitFork,
@@ -29,9 +29,12 @@ export default function OverviewPage() {
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
   const [routes, setRoutes] = useState<RouteItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { health } = useHealth();
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchApi<OverviewMetrics>('/overview');
       const routeData = await fetchApi<RouteItem[]>('/routes');
@@ -39,52 +42,7 @@ export default function OverviewPage() {
       setRoutes(routeData);
     } catch (e) {
       console.error(e);
-      // Fallback mock values for instant rendering if backend is initializing
-      setMetrics({
-        total_routes: 12,
-        total_deliveries: 96,
-        on_time_delivery_rate: 0.875,
-        late_delivery_rate: 0.125,
-        avg_delay_minutes: 8.4,
-        p90_delay_minutes: 18.2,
-        p95_delay_minutes: 24.5,
-        avg_route_efficiency_pct: 91.2,
-        route_deviation_rate: 0.167,
-        high_risk_routes_count: 2,
-        optimization_opportunities_count: 3
-      });
-      setRoutes([
-        {
-          id: 'RT_DEMO_02',
-          external_route_id: 'ROUTE_EXT_1002',
-          driver_id: 'DRV_002',
-          vehicle_id: 'VAN_02',
-          route_date: '2026-08-12',
-          planned_distance_km: 32.5,
-          actual_distance_km: 38.2,
-          planned_duration_min: 180,
-          actual_duration_min: 220,
-          total_stops: 8,
-          status: 'DELAYED',
-          metrics: { distance_variance_km: 5.7, duration_variance_min: 40, on_time_delivery_rate: 0.75, late_delivery_count: 2, route_efficiency_score: 78.5 },
-          deviation: { sequence_similarity_index: 0.71, stop_reorder_count: 2, additional_distance_km: 5.7, additional_duration_min: 40, deviation_percentage: 17.5, is_material_deviation: true, explanation: 'Stops 3 and 4 reordered by driver.' }
-        },
-        {
-          id: 'RT_DEMO_04',
-          external_route_id: 'ROUTE_EXT_1004',
-          driver_id: 'DRV_001',
-          vehicle_id: 'VAN_01',
-          route_date: '2026-08-12',
-          planned_distance_km: 44.5,
-          actual_distance_km: 51.2,
-          planned_duration_min: 240,
-          actual_duration_min: 285,
-          total_stops: 8,
-          status: 'HIGH_RISK',
-          metrics: { distance_variance_km: 6.7, duration_variance_min: 45, on_time_delivery_rate: 0.65, late_delivery_count: 3, route_efficiency_score: 71.0 },
-          deviation: { sequence_similarity_index: 0.65, stop_reorder_count: 3, additional_distance_km: 6.7, additional_duration_min: 45, deviation_percentage: 15.0, is_material_deviation: true, explanation: 'Heavy stop delay & time window pressure.' }
-        }
-      ]);
+      setError('Could not reach the API. The free-tier backend can take about a minute to wake up; try Refresh.');
     } finally {
       setLoading(false);
     }
@@ -94,28 +52,40 @@ export default function OverviewPage() {
     loadData();
   }, []);
 
-  const chartData = routes.map((r, idx) => ({
+  // Only routes whose source data has both planned and actual distance can be charted.
+  const measuredRoutes = routes.filter((r) => r.planned_distance_km != null && r.actual_distance_km != null);
+  const chartData = measuredRoutes.map((r, idx) => ({
     name: `Route #${idx + 1}`,
     planned_km: r.planned_distance_km,
     actual_km: r.actual_distance_km,
-    variance: r.metrics?.distance_variance_km || 0
   }));
+
+  // Routes with a measured deviation, worst first.
+  const priorityRoutes = routes
+    .filter((r) => r.deviation)
+    .sort((a, b) =>
+      Number(b.deviation!.is_material_deviation) - Number(a.deviation!.is_material_deviation) ||
+      b.deviation!.deviation_percentage - a.deviation!.deviation_percentage)
+    .slice(0, 3);
 
   return (
     <div>
       <Header
         title="Operations Control Tower"
-        subtitle="Real-time Logistics Decision Intelligence & Delivery Performance"
+        subtitle="Planned vs actual performance across the loaded route data"
         onRefresh={loadData}
       />
 
       <div className="p-8 space-y-8">
+        {error && (
+          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">{error}</div>
+        )}
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
           <div className="glass-card p-5 rounded-xl border border-slate-800 relative overflow-hidden">
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-xs text-slate-400 font-medium">On-Time Delivery Rate</p>
+                <p className="text-xs text-slate-400 font-medium">Stops in Planned Order</p>
                 <h3 className="text-2xl font-bold text-slate-100 mt-1">
                   {metrics ? `${(metrics.on_time_delivery_rate * 100).toFixed(1)}%` : '--'}
                 </h3>
@@ -124,9 +94,8 @@ export default function OverviewPage() {
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-4 flex items-center text-xs text-emerald-400">
-              <TrendingUp className="w-3.5 h-3.5 mr-1" />
-              <span>Target 95.0% threshold</span>
+            <div className="mt-4 text-xs text-slate-400">
+              Sequence adherence, not punctuality
             </div>
           </div>
 
@@ -135,7 +104,7 @@ export default function OverviewPage() {
               <div>
                 <p className="text-xs text-slate-400 font-medium">Average Delay</p>
                 <h3 className="text-2xl font-bold text-slate-100 mt-1">
-                  {metrics ? `${metrics.avg_delay_minutes} min` : '--'}
+                  {metrics ? fmt(metrics.avg_delay_minutes, ' min') : '--'}
                 </h3>
               </div>
               <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400">
@@ -143,7 +112,9 @@ export default function OverviewPage() {
               </div>
             </div>
             <div className="mt-4 text-xs text-slate-400 font-mono">
-              P90: <span className="text-amber-300 font-semibold">{metrics?.p90_delay_minutes || 0} min</span> | P95: <span className="text-rose-400 font-semibold">{metrics?.p95_delay_minutes || 0} min</span>
+              {metrics && metrics.avg_delay_minutes == null
+                ? 'Not measured: no arrival timestamps'
+                : <>P90: <span className="text-amber-300 font-semibold">{fmt(metrics?.p90_delay_minutes, ' min')}</span> | P95: <span className="text-rose-400 font-semibold">{fmt(metrics?.p95_delay_minutes, ' min')}</span></>}
             </div>
           </div>
 
@@ -160,14 +131,14 @@ export default function OverviewPage() {
               </div>
             </div>
             <div className="mt-4 text-xs text-slate-400">
-              Planned vs Actual sequence variance
+              Routes driven &gt;10% over planned distance
             </div>
           </div>
 
           <div className="glass-card p-5 rounded-xl border border-slate-800 relative overflow-hidden">
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-xs text-slate-400 font-medium">High Risk Routes</p>
+                <p className="text-xs text-slate-400 font-medium">Routes Off Sequence</p>
                 <h3 className="text-2xl font-bold text-rose-400 mt-1">
                   {metrics ? metrics.high_risk_routes_count : '--'}
                 </h3>
@@ -176,8 +147,8 @@ export default function OverviewPage() {
                 <AlertTriangle className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-4 text-xs text-rose-300 flex items-center">
-              <span>{metrics?.optimization_opportunities_count || 0} optimization actions ready</span>
+            <div className="mt-4 text-xs text-slate-400">
+              More than 15% of stops visited out of planned order
             </div>
           </div>
         </div>
@@ -189,7 +160,9 @@ export default function OverviewPage() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-sm font-bold text-slate-200">Route Distance: Planned vs Actual (km)</h2>
-                <p className="text-xs text-slate-400">Calculated from historical delivery routes</p>
+                <p className="text-xs text-slate-400">
+                  {measuredRoutes.length} of {routes.length} routes have planned and actual distance in the source data
+                </p>
               </div>
             </div>
             <div className="h-64 w-full">
@@ -219,25 +192,28 @@ export default function OverviewPage() {
             </div>
 
             <div className="space-y-3 flex-1 overflow-y-auto">
-              {routes.slice(0, 3).map((r) => (
+              {priorityRoutes.length === 0 && (
+                <p className="text-xs text-slate-500">No routes with a measured deviation.</p>
+              )}
+              {priorityRoutes.map((r) => (
                 <div key={r.id} className="p-3.5 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-all">
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="font-mono text-xs text-indigo-400 font-semibold">{r.id}</span>
+                      <span className="font-mono text-xs text-indigo-400 font-semibold">{r.external_route_id}</span>
                       <p className="text-xs text-slate-300 font-medium mt-0.5">{r.total_stops} Stops • Driver {r.driver_id}</p>
                     </div>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      r.deviation?.is_material_deviation
+                      r.deviation!.is_material_deviation
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-slate-800 text-slate-400'
                     }`}>
-                      {r.deviation?.is_material_deviation ? 'MATERIAL DEVIATION' : 'HIGH DELAY'}
+                      {r.deviation!.is_material_deviation ? 'MATERIAL DEVIATION' : 'WITHIN THRESHOLD'}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-2 line-clamp-2">{r.deviation?.explanation || 'Predicted delay exceeds 20 minutes.'}</p>
-                  
+                  <p className="text-[11px] text-slate-400 mt-2 line-clamp-2">{r.deviation!.explanation}</p>
+
                   <div className="mt-3 flex justify-between items-center pt-2 border-t border-slate-800/80">
-                    <span className="text-[10px] text-slate-500 font-mono">Variance: +{r.metrics?.distance_variance_km || 0} km</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Distance: {r.deviation!.deviation_percentage > 0 ? '+' : ''}{r.deviation!.deviation_percentage}% vs plan</span>
                     <Link
                       href={`/routes/${r.id}`}
                       className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center"
@@ -259,9 +235,11 @@ export default function OverviewPage() {
               <Layers className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-100">Public Real-World Logistics Data Ingested</h3>
+              <h3 className="text-sm font-bold text-slate-100">
+                Data sources{health ? `: ${DATA_MODE_LABELS[health.data_mode]}` : ''}
+              </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Amazon Last Mile Routing Challenge (AWS Open Data) & Mendeley Planned vs Actual Routes (DOI: 10.17632/kkwgfvmtxn.1)
+                {health?.data_mode_note ?? 'Checking which datasets are loaded…'}
               </p>
             </div>
           </div>

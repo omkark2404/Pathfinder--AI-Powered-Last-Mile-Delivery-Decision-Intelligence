@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     # In production set ALLOWED_ORIGINS=https://your-domain.com
     ALLOWED_ORIGINS: str = "*"
 
+    # Defaults to the repository-root data/ folder, where the bundled samples live.
     DATA_DIR: str = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
         "data",
     )
 

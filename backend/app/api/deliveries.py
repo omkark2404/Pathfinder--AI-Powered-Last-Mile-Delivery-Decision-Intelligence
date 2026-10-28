@@ -9,16 +9,10 @@ from typing import List, Dict, Any
 from app.core.database import get_db
 from app.models.models import Route, Delivery, Driver, Stop, Prediction
 from app.schemas.schemas import RiskPredictionRequestSchema, OverviewAnalyticsSchema
-from app.ml.features import FeatureEngineer
-from app.ml.eta_model import ETAPredictionModel
-from app.ml.deviation_model import RouteDeviationClassifier
-from app.risk.scorer import DeliveryRiskScorer
+from app.ml.registry import eta_model, score_route
 from app.analytics.delivery import DeliveryAnalytics
 
 router = APIRouter(tags=["Deliveries & Risk"])
-
-eta_model = ETAPredictionModel()
-dev_classifier = RouteDeviationClassifier()
 
 
 @router.get("/overview", response_model=OverviewAnalyticsSchema)
@@ -67,27 +61,27 @@ async def predict_route_risk(req: RiskPredictionRequestSchema, db: AsyncSession 
         d_res = await db.execute(select(Driver).where(Driver.id == route.driver_id))
         driver = d_res.scalar_one_or_none()
 
-    stops = route.stops
-    features = FeatureEngineer.extract_route_features(route, driver, stops)
-    pred_delay, late_prob = eta_model.predict_delay(features)
-    dev_prob = dev_classifier.predict_deviation_probability(features)
-
-    risk_score, risk_level = DeliveryRiskScorer.calculate_risk(
-        pred_delay, late_prob, dev_prob,
-        features["time_window_pressure"],
-        features["route_complexity_score"],
-    )
+    scored = score_route(route, driver, route.stops)
+    if scored is None:
+        # Nothing is persisted: a score built from default features would be made up.
+        return {
+            "route_id": route.id,
+            "external_route_id": route.external_route_id,
+            "data_complete": False,
+            "detail": "Route has no planned distance/duration in the source data, so it cannot be risk-scored.",
+            "data_mode": eta_model.get_metadata()["data_mode"],
+        }
 
     # Persist Prediction record for audit traceability
     prediction_record = Prediction(
         id=str(uuid.uuid4()),
         route_id=route.id,
-        predicted_delay_min=round(float(pred_delay), 2),
-        late_probability=round(float(late_prob), 4),
-        deviation_probability=round(float(dev_prob), 4),
-        composite_risk_score=round(float(risk_score), 2),
-        risk_level=risk_level,
-        feature_snapshot=features,
+        predicted_delay_min=round(float(scored["predicted_delay_min"]), 2),
+        late_probability=round(float(scored["late_probability"]), 4),
+        deviation_probability=round(float(scored["deviation_probability"]), 4),
+        composite_risk_score=round(float(scored["composite_risk_score"]), 2),
+        risk_level=scored["risk_level"],
+        feature_snapshot=scored["features"],
         created_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(prediction_record)
@@ -101,7 +95,33 @@ async def predict_route_risk(req: RiskPredictionRequestSchema, db: AsyncSession 
         "late_probability": prediction_record.late_probability,
         "deviation_probability": prediction_record.deviation_probability,
         "composite_risk_score": prediction_record.composite_risk_score,
-        "risk_level": risk_level,
+        "risk_level": prediction_record.risk_level,
+        "data_complete": True,
         "data_mode": eta_model.get_metadata()["data_mode"],
-        "features": features,
+        "features": scored["features"],
     }
+
+
+@router.get("/risk-scores")
+async def list_route_risk_scores(db: AsyncSession = Depends(get_db)) -> List[Dict[str, Any]]:
+    """
+    Composite risk for every route, computed with the same models as /routes/predict-risk.
+    Read-only: nothing is persisted. Routes without planning data are returned unscored.
+    """
+    stmt = select(Route).options(selectinload(Route.stops), selectinload(Route.driver))
+    routes = (await db.execute(stmt)).scalars().all()
+    results = []
+    for r in routes:
+        scored = score_route(r, r.driver, r.stops)
+        results.append({
+            "route_id": r.id,
+            "external_route_id": r.external_route_id,
+            "total_stops": r.total_stops,
+            "planned_distance_km": r.planned_distance_km,
+            "data_complete": scored is not None,
+            "composite_risk_score": scored["composite_risk_score"] if scored else None,
+            "risk_level": scored["risk_level"] if scored else None,
+            "predicted_delay_min": scored["predicted_delay_min"] if scored else None,
+            "deviation_probability": scored["deviation_probability"] if scored else None,
+        })
+    return results

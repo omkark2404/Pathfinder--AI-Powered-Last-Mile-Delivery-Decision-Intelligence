@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Bell, RefreshCw, Database } from 'lucide-react';
+import { RefreshCw, Database } from 'lucide-react';
+import { DATA_MODE_LABELS } from '@/lib/api';
+import { useHealth } from '@/lib/useHealth';
 
 interface HeaderProps {
   title: string;
@@ -10,6 +12,10 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle, onRefresh }: HeaderProps) {
+  const { health, error } = useHealth();
+  const isRealData = health?.data_mode === 'public_datasets';
+  const badgeText = health ? DATA_MODE_LABELS[health.data_mode] : error ? 'API unreachable' : 'Checking data…';
+
   return (
     <header className="h-16 glass-panel border-b border-slate-800 flex items-center justify-between px-8 sticky top-0 z-20">
       <div>
@@ -29,9 +35,16 @@ export default function Header({ title, subtitle, onRefresh }: HeaderProps) {
           </button>
         )}
 
-        <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+        <div
+          title={health?.data_mode_note}
+          className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs border ${
+            isRealData
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+          }`}
+        >
           <Database className="w-3.5 h-3.5" />
-          <span className="font-medium">Amazon & Mendeley Datasets</span>
+          <span className="font-medium">{badgeText}</span>
         </div>
       </div>
     </header>

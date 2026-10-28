@@ -8,8 +8,9 @@ from app.models.models import Route, Stop, OptimizationRun
 
 class VRPOptimizer:
     """
-    Vehicle Routing Problem (VRP) & TSP solver using Google OR-Tools.
-    Models distance matrix, service times, and time-window penalties.
+    Stop re-sequencing with the Google OR-Tools routing solver.
+    Minimizes straight-line (Haversine) distance only: no time windows, capacity
+    or duration constraints yet. Duration figures are scaled from distance.
     """
     @staticmethod
     def _haversine_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -24,7 +25,7 @@ class VRPOptimizer:
     @classmethod
     def _build_distance_matrix(cls, depot_loc: Dict[str, Any], stops: List[Stop]) -> np.ndarray:
         """Builds distance matrix (in meters) for OR-Tools solver."""
-        locations = [(depot_loc.get("lat", 37.7749), depot_loc.get("lng", -122.4194))]
+        locations = [(depot_loc["lat"], depot_loc["lng"])]
         for s in stops:
             lat = s.lat if s.lat is not None else locations[0][0] + (s.planned_sequence * 0.01)
             lng = s.lng if s.lng is not None else locations[0][1] + (s.planned_sequence * 0.01)
@@ -39,6 +40,29 @@ class VRPOptimizer:
                     dist_matrix[i][j] = int(d_km * 1000) # Convert to meters for int solver
         return dist_matrix
 
+    @staticmethod
+    def _resolve_depot(route: Route, sorted_stops: List[Stop]) -> Dict[str, Any]:
+        """The route's depot, or the first planned stop when the data has no depot."""
+        depot = route.depot_location
+        if depot and depot.get("lat") is not None and depot.get("lng") is not None:
+            return depot
+        return {"lat": sorted_stops[0].lat, "lng": sorted_stops[0].lng}
+
+    @staticmethod
+    def has_dispatch_plan(route: Route) -> bool:
+        """True when the source data provided a planned route (planned distance), so stop order is a real plan."""
+        return route.planned_distance_km is not None
+
+    @classmethod
+    def planned_order_distance_km(cls, route: Route, stops: List[Stop]) -> float:
+        """Straight-line length of the planned stop order, depot to depot."""
+        sorted_stops = sorted(stops, key=lambda s: s.planned_sequence)
+        if not sorted_stops:
+            return 0.0
+        m = cls._build_distance_matrix(cls._resolve_depot(route, sorted_stops), sorted_stops)
+        n = len(sorted_stops)
+        return round((sum(m[i][i + 1] for i in range(n)) + m[n][0]) / 1000.0, 2)
+
     @classmethod
     def optimize_route(
         cls,
@@ -52,7 +76,9 @@ class VRPOptimizer:
         """
         start_time = time.time()
         sorted_stops = sorted(stops, key=lambda s: s.planned_sequence)
-        depot = route.depot_location or {"lat": 37.7749, "lng": -122.4194}
+        if not sorted_stops:
+            raise ValueError("Route has no stops to optimize.")
+        depot = cls._resolve_depot(route, sorted_stops)
         
         weights = weights or {
             "distance_weight": 1.0,
@@ -121,40 +147,43 @@ class VRPOptimizer:
             })
         opt_dist_meters += dist_matrix[prev_node][0] # Return to depot
 
-        baseline_dist_km = route.planned_distance_km or (sum(
-            dist_matrix[i][i + 1] for i in range(len(sorted_stops))
-        ) / 1000.0)
+        # Baseline = the planned stop order measured with the same straight-line distances,
+        # so the comparison is like for like. The dataset's own planned km is reported separately.
+        # Savings are only meaningful against a real dispatch plan. Sources without one
+        # (the Amazon sample lists stops in file order) get the optimized tour but no baseline.
+        has_plan = cls.has_dispatch_plan(route)
+        baseline_dist_km = cls.planned_order_distance_km(route, sorted_stops) if has_plan else None
         optimized_dist_km = round(opt_dist_meters / 1000.0, 2)
 
         dist_savings_pct = round(
             max(0.0, ((baseline_dist_km - optimized_dist_km) / max(1.0, baseline_dist_km)) * 100.0),
             1,
-        )
+        ) if has_plan else None
 
-        baseline_dur_min = route.planned_duration_min or 240.0
-        # Duration savings are estimated proportionally to distance savings.
-        # Speed is assumed constant, so duration scales with distance.
-        optimized_dur_min = round(
-            baseline_dur_min * (1.0 - (dist_savings_pct / 100.0 * 0.8)), 1
-        )
-        dur_savings_pct = round(
-            max(0.0, ((baseline_dur_min - optimized_dur_min) / max(1.0, baseline_dur_min)) * 100.0),
-            1,
-        )
-
-        objective_value = round((optimized_dist_km * weights.get("distance_weight", 1.0)) + (optimized_dur_min * weights.get("duration_weight", 1.5)), 2)
+        # Duration is an estimate scaled from distance savings (constant speed assumed),
+        # and only when the route has a planned duration to scale.
+        baseline_dur_min = route.planned_duration_min
+        if baseline_dur_min and dist_savings_pct is not None:
+            optimized_dur_min = round(baseline_dur_min * (1.0 - (dist_savings_pct / 100.0 * 0.8)), 1)
+            dur_savings_pct = round(
+                max(0.0, ((baseline_dur_min - optimized_dur_min) / max(1.0, baseline_dur_min)) * 100.0),
+                1,
+            )
+        else:
+            optimized_dur_min = dur_savings_pct = None
 
         return {
-            "algorithm": "Google OR-Tools VRP Solver",
+            "algorithm": "Google OR-Tools routing (distance-only, Haversine)",
             "solver_time_ms": solver_time_ms,
             "baseline_distance_km": baseline_dist_km,
             "optimized_distance_km": optimized_dist_km,
+            "reported_planned_distance_km": route.planned_distance_km,
             "baseline_duration_min": baseline_dur_min,
             "optimized_duration_min": optimized_dur_min,
             "distance_savings_pct": dist_savings_pct,
             "duration_savings_pct": dur_savings_pct,
+            "duration_is_estimate": True,
             "is_feasible": is_feasible,
             "optimized_sequence": optimized_stops_sequence,
-            "objective_value": objective_value,
             "weights_used": weights
         }

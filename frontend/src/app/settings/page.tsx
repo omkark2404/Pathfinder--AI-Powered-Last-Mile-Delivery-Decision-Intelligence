@@ -7,18 +7,19 @@ import { Settings, Download, ExternalLink, ShieldCheck, Database, Info } from 'l
 export default function SettingsPage() {
   return (
     <div>
-      <Header title="System Configuration & Real Datasets Setup" subtitle="Dataset Placement Instructions & System Environment Settings" />
+      <Header title="System Configuration & Dataset Setup" subtitle="What ships with the repo, and where to place the full public datasets" />
 
       <div className="p-8 space-y-8">
-        {/* Real Public Dataset Policy Info Box */}
         <div className="glass-panel p-6 rounded-xl border border-indigo-500/30 bg-indigo-950/20 space-y-4">
           <div className="flex items-center space-x-3">
             <Info className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-sm font-bold text-slate-100">Real Public Data Policy</h2>
+            <h2 className="text-sm font-bold text-slate-100">Data Provenance</h2>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">
-            Per project specification, primary operational workflows run on real public delivery/logistics datasets.
-            Synthetic data is strictly prohibited for model evaluation, ETA accuracy reports, or optimization claims.
+            The repository bundles a 13-route real subset of the Amazon Last Mile dataset (stop locations, packages, service
+            times; no actual visit order or distances) and a <span className="text-amber-300 font-semibold">synthetic</span> 30-route
+            fixture in the Mendeley planned-vs-actual schema (<span className="font-mono">data/mendeley_synthetic_fixture.csv</span>).
+            Anything computed from the fixture is a demonstration, not a real-world result. The header badge shows which data is loaded.
           </p>
         </div>
 
@@ -39,7 +40,7 @@ export default function SettingsPage() {
             </p>
 
             <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs font-mono space-y-1">
-              <div className="text-slate-400">Source: <a href="https://registry.opendata.aws/amazon-last-mile-challenges/" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">AWS Registry</a></div>
+              <div className="text-slate-400">Source: <a href="https://registry.opendata.aws/amazon-last-mile-challenges/" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">AWS Registry (CC BY-NC 4.0)</a></div>
               <div className="text-slate-400">Target File Path: <span className="text-amber-300">./data/amazon_last_mile.json</span></div>
             </div>
 
@@ -49,7 +50,7 @@ export default function SettingsPage() {
               rel="noreferrer"
               className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium inline-flex items-center space-x-1.5 transition-all border border-slate-700"
             >
-              <span>AWS Open Data Registry</span>
+              <span>Registry of Open Data on AWS</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
@@ -65,7 +66,7 @@ export default function SettingsPage() {
             </div>
 
             <p className="text-xs text-slate-400">
-              Contains planned routes and actual driven routes by delivery drivers, stop sequence changes, time windows, and exact timing.
+              Real dataset: planned vs actual stop sequences, time windows and arrival timing from a logistics company. Not bundled; the repo ships a synthetic fixture in its place.
             </p>
 
             <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs font-mono space-y-1">

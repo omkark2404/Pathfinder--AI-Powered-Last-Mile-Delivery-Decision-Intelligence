@@ -129,7 +129,7 @@ class Delivery(Base):
     weight_kg = Column(Float, nullable=True)
     volume_m3 = Column(Float, nullable=True)
     priority = Column(String, default="NORMAL") # HIGH, NORMAL, LOW
-    is_late = Column(Boolean, default=False)
+    is_late = Column(Boolean, nullable=True)  # None = unknown (no arrival timestamps)
     delay_minutes = Column(Float, default=0.0)
 
     stop = relationship("Stop", back_populates="deliveries")

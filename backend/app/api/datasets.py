@@ -18,7 +18,11 @@ async def list_datasets(db: AsyncSession = Depends(get_db)):
 @router.post("/ingest")
 async def ingest_dataset(request: IngestRequestSchema, db: AsyncSession = Depends(get_db)):
     pipeline = IngestionPipeline(db)
-    dataset, run, report = await pipeline.run_ingestion(request)
+    try:
+        dataset, run, report = await pipeline.run_ingestion(request)
+    except (ValueError, KeyError, UnicodeDecodeError) as e:
+        # Unparseable or wrongly shaped file (pandas/json errors subclass ValueError); nothing was persisted.
+        raise HTTPException(status_code=422, detail=f"Could not parse dataset file: {e}")
     return {
         "dataset_id": dataset.id,
         "name": dataset.name,

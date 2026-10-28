@@ -3,8 +3,8 @@
 ## Architectural Principles
 
 1. **Modular Monolith**: Simple, clean monorepo architecture avoiding unnecessary microservice overhead.
-2. **Deterministic Optimization + ML Prediction**: ML predicts uncertain outcomes (delay, deviation probability); deterministic OR-Tools algorithms calculate exact optimal routes.
-3. **No Synthetic Data in Production ML**: Models train and evaluate strictly on real-world historical delivery data.
+2. **Optimization + ML Prediction**: ML estimates uncertain outcomes (delay, deviation probability); the OR-Tools routing solver searches for shorter stop sequences within a time limit.
+3. **Explicit Data Provenance**: Every dataset is tagged real or synthetic (`is_synthetic`), `GET /health` reports what is loaded, and missing source values stay unknown instead of being filled with defaults.
 
 ## Component Flow Diagram
 
@@ -25,7 +25,7 @@ flowchart TB
     DATA --> PG[(PostgreSQL App DB)]
     DATA --> DUCK[DuckDB OLAP Engine]
 
-    RAW[Real Public Delivery Datasets] --> ING[Ingestion Pipeline] --> VAL[Quality Validator] --> CAN[Canonical Model]
+    RAW[Bundled samples / public datasets] --> ING[Ingestion Pipeline] --> VAL[Quality Validator] --> CAN[Canonical Model]
     CAN --> DATA
 ```
 

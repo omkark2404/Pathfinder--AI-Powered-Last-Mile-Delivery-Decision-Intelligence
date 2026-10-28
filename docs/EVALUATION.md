@@ -1,57 +1,44 @@
 # Model & Optimization Evaluation — Pathfinder Last-Mile Decision Intelligence
 
-## 1. Overview & Evaluation Methodology
-
 > [!CAUTION]
-> **PRELIMINARY EVALUATION NOTICE**
-> The metrics reported below (MAE, precision, recall, etc.) were computed on a very small committed benchmark sample (13 Amazon routes, and a 30-route *synthetic fixture* mimicking the Mendeley dataset). These results **must not** be treated as production-representative. They serve only to validate the end-to-end ML pipeline execution.
-> 
-> Before deploying or making business claims, the models **must be re-validated** against the full datasets (the 9,184 Amazon routes and the authentic Mendeley download). You can automate this process using `make eval-full` from the project root.
+> No real-world model performance is claimed. The only outcome data in the repository is a **synthetic** fixture, so the numbers below check that the evaluation pipeline runs end to end.
 
-Pathfinder utilizes a decoupled dual-model architecture evaluated on real logistics benchmark datasets:
-1. **Amazon Last Mile Routing Research Challenge Sample** (13 regional routes, 200+ stops)
-2. **Planned vs Actual Route Deviations Dataset** (Synthetic 30-route fixture mimicking DOI: 10.17632/kkwgfvmtxn.1)
+## 1. What is deployed
 
-Evaluation splits are conducted chronologically (temporal split: earlier delivery dates for training, later dates for testing) to prevent temporal target leakage.
+Both API models (`ETAPredictionModel`, `RouteDeviationClassifier`) are fitted at startup on 5 hand-written rows. `GET /api/v1/metrics` therefore returns `metrics: null` and `evaluation_status: "insufficient_data"`.
 
-> [!NOTE]
-> **Sample Size Notice**: Due to the test sample size ($n=13$), metrics are rounded to 1 decimal place to reflect realistic measurement uncertainty rather than unwarranted 3-decimal precision. The system flags this condition via `evaluation_status: "low_sample_size"`.
+## 2. Offline evaluation
 
----
+```bash
+cd backend
+python scripts/train_eval.py   # writes docs/eval_results.json
+```
 
-## 2. Evaluation Results
+The script:
+1. Ingests `data/` into a throwaway in-memory database with the normal pipeline.
+2. Keeps only routes with outcome data: planned and actual distance/duration plus the actual visit order. With the bundled files that is the 30-route synthetic Mendeley-schema fixture; the 13 Amazon sample routes have no outcomes.
+3. Builds the 9 dispatch-time features (`backend/app/ml/features.py`) and two targets:
+   - **Delay**: actual − planned route duration (minutes)
+   - **Material deviation**: distance more than 10% over plan, or Kendall-tau sequence similarity below 0.85 (`backend/app/analytics/deviation.py`)
+4. Runs 5-fold cross-validation (seed 42) with the same hyperparameters as the API models, alongside baselines.
+5. Records dataset provenance, constant features, folds, seed and sklearn version in `docs/eval_results.json`.
 
-### ETA Delay Prediction Model (`GradientBoostingRegressor`)
-* **Target**: Continuous `delay_minutes` (evaluated against actual delivery completion durations)
-* **Hyperparameters**: 50 estimators, `max_depth=3`, `random_state=42`
-* **Leakage Prevention**: All features are computed strictly at dispatch time $T_0$.
+The bundled fixture has no dates or driver history, so the folds are random rather than temporal. With real data, split by date or by driver instead.
 
-| Metric | Measured Value | Baseline (Linear Regression) | Interpretation |
+## 3. Current output (synthetic fixture, n = 30)
+
+| Task | Metric (mean ± std over folds) | Model | Baselines |
 |---|---|---|---|
-| **MAE** | **34.5 min** | 42.1 min | 18.1% improvement over linear baseline |
-| **RMSE** | **43.9 min** | 55.3 min | Penalizes large delay outliers effectively |
-| **Median AE** | **24.2 min** | 31.8 min | 50% of predictions are within 24 min |
-| **P90 Error** | **72.5 min** | 89.2 min | Upper bound for SLA breach thresholding |
-| **Mean Bias** | **-3.3 min** | -8.4 min | Low systemic under/over-prediction |
+| Route delay | MAE (min) | Gradient boosting 30.3 ± 16.9 | Predict the mean 33.2 ± 4.9 · Linear regression 35.2 ± 8.1 |
+| Material deviation | PR-AUC | Random forest 0.73 ± 0.06 | Prevalence 0.37 ± 0.07 |
+| Material deviation | Precision / Recall / F1 at 0.5 | 0.60 / 0.37 / 0.43 | — |
 
----
+Three of the nine features (driver adherence, driver historical delay, time-window pressure) are constant on this data. Gradient boosting is not clearly better than predicting the mean. These numbers describe a generated fixture and should not be quoted as model accuracy.
 
-### Route Deviation Classifier (`RandomForestClassifier`)
-* **Target**: Binary classification `is_material_deviation` (sequence similarity < 0.85 or route variance > 10%)
-* **Hyperparameters**: 30 estimators, `random_state=42`
+## 4. Route optimization
 
-| Metric | Measured Value | Baseline (Majority Class) | Interpretation |
-|---|---|---|---|
-| **Precision** | **54.5%** | 34.8% | High operational relevance for dispatcher alerts |
-| **Recall** | **100.0%** | 50.0% | Zero missed severe sequence deviations in test set |
-| **F1 Score** | **0.7** | 0.4 | Balanced harmonic mean on imbalanced data |
-| **PR-AUC** | **0.6** | 0.3 | Robust area under precision-recall curve |
-
----
-
-## 3. Route Optimization Solver (Google OR-Tools VRP)
-
-The optimization engine implements Google OR-Tools CP-SAT with `PATH_CHEAPEST_ARC` heuristic search over the calculated Haversine inter-stop distance matrix:
-* **Solver Budget**: 2,000 ms per route (suitable for interactive dispatcher workflow up to 50 stops).
-* **Objective Function**: $\min(w_{\text{dist}} \cdot \text{distance} + w_{\text{time}} \cdot \text{duration})$.
-* **Dynamically Evaluated Savings**: All savings percentages displayed in the dispatch UI are computed at request time by comparing solver solution values directly against planned route baselines.
+- **Solver**: OR-Tools routing library (`pywrapcp`), `PATH_CHEAPEST_ARC` first solution, 2 s time limit
+- **Objective**: minimize straight-line (Haversine) distance only
+- **Baseline**: the planned stop order measured with the same distance matrix. Routes whose source data has no dispatch plan (the Amazon sample) get no baseline and no savings figure.
+- **Duration**: estimated by scaling planned duration with the distance saved; flagged `duration_is_estimate` in the API
+- **Tests**: `backend/tests/test_core_algorithms.py` checks the solver against a 3-stop instance with a known optimum
