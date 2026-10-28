@@ -6,7 +6,7 @@ Pathfinder--AI-Powered-Last-Mile-Delivery-Decision-Intelligence is an end-to-end
 
 ## Problem Statement
 
-Last-mile delivery represents up to 53% of overall logistics costs. Delivery operators face:
+Last-mile delivery is commonly described as the most expensive and least predictable leg of parcel logistics. Delivery operators face:
 - Unpredictable travel-time variance and traffic bottlenecks leading to late deliveries
 - Driver route deviations from planned sequences
 - Lack of real-time visibility into stop-level delay risks
@@ -26,8 +26,8 @@ Last-mile delivery represents up to 53% of overall logistics costs. Delivery ope
 
 ## Primary Capabilities
 
-- **Delivery Risk Engine**: Predicts late delivery probabilities and computes composite 0–100 risk scores.
+- **Delivery Risk Engine**: Composite 0–100 route risk score from prototype delay and deviation models.
 - **Route Intelligence**: Measures sequence adherence (Kendall Tau similarity) and planned vs actual distance/duration variance.
-- **Google OR-Tools VRP Optimizer**: Solves exact Traveling Salesperson and Vehicle Routing Problems with configurable cost weights.
-- **What-If Scenario Simulator**: Simulates resequencing, multi-vehicle splits, and time-window priorities.
-- **Auditability**: Tracks every dispatcher decision and evidence payload in an immutable audit trail.
+- **Google OR-Tools Optimizer**: Re-sequences a route's stops to minimize straight-line distance (heuristic search with a 2 s limit; no time windows yet).
+- **What-If Scenario Simulator**: Compares the planned order with re-sequencing and a rough multi-vehicle split.
+- **Auditability**: Records each dispatcher accept/reject decision with its evidence snapshot in an audit log.

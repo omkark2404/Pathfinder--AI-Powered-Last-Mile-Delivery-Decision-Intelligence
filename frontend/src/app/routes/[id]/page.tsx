@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Header from '@/components/Header';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fmt } from '@/lib/api';
 import { useParams } from 'next/navigation';
 import {
   MapPin,
@@ -32,9 +32,11 @@ export default function RouteInvestigationPage() {
   const [loading, setLoading] = useState(true);
   const [optimizing, setOptimizing] = useState(false);
   const [simulating, setSimulating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const rData = await fetchApi<any>(`/routes/${routeId}`);
       setRoute(rData);
@@ -46,13 +48,13 @@ export default function RouteInvestigationPage() {
       });
       setRiskData(risk);
 
-      // Fetch recommendations list and find for this route
+      // Only this route's recommendation; never fall back to another route's.
       const recs = await fetchApi<any[]>(`/recommendations`);
-      const rec = recs.find((item: any) => item.route_id === routeId) || recs[0];
-      setRecommendation(rec);
+      setRecommendation(recs.find((item: any) => item.route_id === routeId) ?? null);
 
     } catch (e) {
       console.error(e);
+      setError('Could not load this route from the API.');
     } finally {
       setLoading(false);
     }
@@ -79,6 +81,7 @@ export default function RouteInvestigationPage() {
       setOptResult(res);
     } catch (e) {
       console.error(e);
+      setError('The optimizer request failed.');
     } finally {
       setOptimizing(false);
     }
@@ -98,6 +101,7 @@ export default function RouteInvestigationPage() {
       setSimResult(res);
     } catch (e) {
       console.error(e);
+      setError('The scenario request failed.');
     } finally {
       setSimulating(false);
     }
@@ -129,14 +133,25 @@ export default function RouteInvestigationPage() {
     );
   }
 
+  const depot = route?.depot_location;
+  const depotLabel = depot?.station_code
+    ? `Depot: station ${depot.station_code}`
+    : depot?.lat != null
+      ? `Depot: ${depot.lat.toFixed(3)}, ${depot.lng.toFixed(3)}`
+      : 'Depot: not in source data (tour starts at stop 1)';
+  const riskScored = riskData && riskData.data_complete !== false;
+
   return (
     <div>
       <Header
-        title={`Route Investigation Workspace: ${routeId}`}
-        subtitle={`Driver: ${route?.driver_id || 'DRV_01'} • Depot: San Francisco Hub`}
+        title={`Route Investigation Workspace: ${route?.external_route_id ?? routeId}`}
+        subtitle={`Driver: ${route?.driver_id ?? 'unknown'} • ${depotLabel}`}
       />
 
       <div className="p-8 space-y-8">
+        {error && (
+          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">{error}</div>
+        )}
         {/* Top Metric Comparison: Planned vs Optimized vs Actual */}
         <div className="glass-panel p-6 rounded-xl border border-slate-800">
           <h2 className="text-sm font-bold text-slate-200 mb-4 flex items-center">
@@ -147,34 +162,47 @@ export default function RouteInvestigationPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
               <span className="text-xs text-slate-400">PLANNED</span>
-              <div className="text-xl font-bold text-slate-200 mt-1">{route?.planned_distance_km} km</div>
-              <div className="text-xs text-slate-400 mt-0.5">{route?.planned_duration_min} min</div>
+              <div className="text-xl font-bold text-slate-200 mt-1">{fmt(route?.planned_distance_km, ' km')}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{fmt(route?.planned_duration_min, ' min')}</div>
             </div>
 
             <div className="p-4 rounded-lg bg-indigo-950/40 border border-indigo-500/30">
-              <span className="text-xs text-indigo-300 font-semibold">OPTIMIZED (OR-Tools)</span>
+              <span className="text-xs text-indigo-300 font-semibold">OPTIMIZED (OR-Tools, straight-line)</span>
               <div className="text-xl font-bold text-indigo-400 mt-1">
                 {optResult ? `${optResult.optimized_distance_km} km` : 'Run Solver'}
               </div>
               <div className="text-xs text-indigo-300 mt-0.5">
-                {optResult ? `${optResult.optimized_duration_min} min (-${optResult.duration_savings_pct}%)` : 'Ready to run'}
+                {!optResult
+                  ? 'Ready to run'
+                  : optResult.optimized_duration_min != null
+                    ? `${optResult.optimized_duration_min} min (estimate)`
+                    : 'duration n/a'}
               </div>
             </div>
 
             <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
               <span className="text-xs text-slate-400">ACTUAL DRIVEN</span>
-              <div className="text-xl font-bold text-rose-400 mt-1">{route?.actual_distance_km} km</div>
-              <div className="text-xs text-slate-400 mt-0.5">{route?.actual_duration_min} min</div>
+              <div className="text-xl font-bold text-rose-400 mt-1">{fmt(route?.actual_distance_km, ' km')}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{fmt(route?.actual_duration_min, ' min')}</div>
             </div>
 
             <div className="p-4 rounded-lg bg-slate-900/80 border border-slate-800">
-              <span className="text-xs text-slate-400">SEQUENCE DEVIATION</span>
-              <div className="text-xl font-bold text-amber-400 mt-1">
-                {((route?.deviation?.sequence_similarity_index || 0.75) * 100).toFixed(0)}% Adherence
-              </div>
-              <div className="text-xs text-slate-400 mt-0.5">
-                {route?.deviation?.stop_reorder_count || 2} stops reordered
-              </div>
+              <span className="text-xs text-slate-400">SEQUENCE SIMILARITY (Kendall tau)</span>
+              {route?.deviation ? (
+                <>
+                  <div className="text-xl font-bold text-amber-400 mt-1">
+                    {(route.deviation.sequence_similarity_index * 100).toFixed(0)}%
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {route.deviation.stop_reorder_count} stops reordered
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-xl font-bold text-slate-500 mt-1">n/a</div>
+                  <div className="text-xs text-slate-400 mt-0.5">No actual visit order in source data</div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -186,69 +214,87 @@ export default function RouteInvestigationPage() {
             <div>
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-200">ML Delivery Risk Diagnosis</h3>
-                  <p className="text-xs text-slate-400">Supervised ETA & Deviation Predictor</p>
+                  <h3 className="text-sm font-bold text-slate-200">Delivery Risk Score</h3>
+                  <p className="text-xs text-slate-400">Prototype models (see Models page for training status)</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                  riskData?.risk_level === 'CRITICAL' || riskData?.risk_level === 'HIGH'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                }`}>
-                  {riskData?.risk_level || 'HIGH'} RISK ({riskData?.composite_risk_score || 68}/100)
-                </span>
+                {riskScored && (
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    riskData.risk_level === 'CRITICAL' || riskData.risk_level === 'HIGH'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      : riskData.risk_level === 'MEDIUM'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  }`}>
+                    {riskData.risk_level} RISK ({riskData.composite_risk_score}/100)
+                  </span>
+                )}
               </div>
 
+              {!riskScored ? (
+                <div className="mt-6 p-4 rounded-lg border border-dashed border-slate-800 text-xs text-slate-400">
+                  {riskData?.detail ?? 'Risk score unavailable.'}
+                </div>
+              ) : (
               <div className="mt-6 space-y-4">
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-slate-400">Predicted Delay</span>
-                    <span className="text-slate-200 font-mono font-semibold">+{riskData?.predicted_delay_min || 18.5} min</span>
+                    <span className="text-slate-200 font-mono font-semibold">+{riskData.predicted_delay_min} min</span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, ((riskData?.predicted_delay_min || 18.5)/30)*100)}%` }}></div>
+                    <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, (riskData.predicted_delay_min / 30) * 100)}%` }}></div>
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-400">Late Delivery Probability</span>
-                    <span className="text-slate-200 font-mono font-semibold">{((riskData?.late_probability || 0.62) * 100).toFixed(0)}%</span>
+                    <span className="text-slate-400">Late Probability (uncalibrated)</span>
+                    <span className="text-slate-200 font-mono font-semibold">{(riskData.late_probability * 100).toFixed(0)}%</span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div className="bg-rose-500 h-full" style={{ width: `${(riskData?.late_probability || 0.62) * 100}%` }}></div>
+                    <div className="bg-rose-500 h-full" style={{ width: `${riskData.late_probability * 100}%` }}></div>
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-slate-400">Route Deviation Probability</span>
-                    <span className="text-slate-200 font-mono font-semibold">{((riskData?.deviation_probability || 0.45) * 100).toFixed(0)}%</span>
+                    <span className="text-slate-200 font-mono font-semibold">{(riskData.deviation_probability * 100).toFixed(0)}%</span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div className="bg-indigo-500 h-full" style={{ width: `${(riskData?.deviation_probability || 0.45) * 100}%` }}></div>
+                    <div className="bg-indigo-500 h-full" style={{ width: `${riskData.deviation_probability * 100}%` }}></div>
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </div>
 
           {/* Operational Dispatcher Recommendation */}
           <div className="glass-panel p-6 rounded-xl border border-indigo-500/30 bg-indigo-950/20 flex flex-col justify-between">
             <div>
-              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">AI Operational Recommendation</span>
-              <h3 className="text-base font-bold text-slate-100 mt-1">{recommendation?.title || 'Resequence Stop Order'}</h3>
-              <p className="text-xs text-slate-300 mt-2 leading-relaxed">{recommendation?.explanation || 'Resequencing stops cuts duration variance.'}</p>
-
-              <div className="mt-4 p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
-                <div className="text-emerald-400">Est. Duration Saved: -{recommendation?.expected_impact?.saved_minutes || 24} min</div>
-                <div className="text-indigo-300">Est. Distance Saved: -{recommendation?.expected_impact?.saved_km || 4.5} km</div>
-              </div>
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Rule-Based Recommendation</span>
+              {recommendation ? (
+                <>
+                  <h3 className="text-base font-bold text-slate-100 mt-1">{recommendation.title}</h3>
+                  <p className="text-xs text-slate-300 mt-2 leading-relaxed">{recommendation.explanation}</p>
+                  <div className="mt-4 p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
+                    <div className="text-emerald-400">Est. time saved: {fmt(recommendation.expected_impact?.saved_minutes, ' min')}</div>
+                    <div className="text-indigo-300">Est. distance saved: {fmt(recommendation.expected_impact?.saved_km, ' km')}</div>
+                    <div className="text-slate-500">Rule-of-thumb estimates from the decision rules, not measured.</div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 mt-3">
+                  No recommendation for this route. Recommendations need a risk score, which needs planned distance and duration in the source data.
+                </p>
+              )}
             </div>
 
             <div className="mt-6 flex items-center space-x-3 pt-4 border-t border-slate-800">
-              {recommendation?.status === 'ACCEPTED' ? (
+              {!recommendation ? null : recommendation.status === 'ACCEPTED' ? (
                 <span className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center">
-                  <Check className="w-4 h-4 mr-1.5" /> Recommendation Accepted & Executed
+                  <Check className="w-4 h-4 mr-1.5" /> Recommendation Accepted (logged to audit trail)
                 </span>
               ) : recommendation?.status === 'REJECTED' ? (
                 <span className="px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center">
@@ -283,8 +329,8 @@ export default function RouteInvestigationPage() {
           <div className="glass-panel p-6 rounded-xl border border-slate-800">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-200">Google OR-Tools VRP Solver</h3>
-                <p className="text-xs text-slate-400">Constraint-Aware TSP / VRP Sequence Optimizer</p>
+                <h3 className="text-sm font-bold text-slate-200">Google OR-Tools Solver</h3>
+                <p className="text-xs text-slate-400">Distance-only re-sequencing over straight-line (Haversine) distances</p>
               </div>
               <button
                 onClick={handleRunOptimizer}
@@ -304,13 +350,19 @@ export default function RouteInvestigationPage() {
                   <span className="text-emerald-400 font-bold">{optResult.solver_time_ms} ms</span>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 flex justify-between">
-                  <span className="text-slate-400">Distance Reduction:</span>
-                  <span className="text-indigo-300">{optResult.baseline_distance_km} km → {optResult.optimized_distance_km} km (-{optResult.distance_savings_pct}%)</span>
+                  <span className="text-slate-400">Planned order → optimized:</span>
+                  <span className="text-indigo-300">
+                    {optResult.baseline_distance_km != null
+                      ? `${optResult.baseline_distance_km} km → ${optResult.optimized_distance_km} km (-${optResult.distance_savings_pct}%)`
+                      : `${optResult.optimized_distance_km} km (no dispatch plan in source data to compare)`}
+                  </span>
                 </div>
-                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 flex justify-between">
-                  <span className="text-slate-400">Duration Reduction:</span>
-                  <span className="text-indigo-300">{optResult.baseline_duration_min} min → {optResult.optimized_duration_min} min (-{optResult.duration_savings_pct}%)</span>
-                </div>
+                {optResult.optimized_duration_min != null && (
+                  <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 flex justify-between">
+                    <span className="text-slate-400">Duration (estimate, scaled from distance):</span>
+                    <span className="text-indigo-300">{optResult.baseline_duration_min} min → {optResult.optimized_duration_min} min</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-lg">
@@ -337,23 +389,18 @@ export default function RouteInvestigationPage() {
                 disabled={simulating}
                 className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700"
               >
-                Scenario B: 2 Vehicles
-              </button>
-              <button
-                onClick={() => handleRunScenario('TIME_OPTIMIZED')}
-                disabled={simulating}
-                className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700"
-              >
-                Scenario C: Time Optimized
+                Scenario B: 2 Vehicles (rough estimate)
               </button>
             </div>
 
             {simResult ? (
               <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2 text-xs font-mono">
                 <div className="text-slate-300 font-bold">{simResult.description}</div>
-                <div className="text-emerald-400">Time Saved: {simResult.duration_saved_min} min</div>
-                <div className="text-indigo-300">Distance Saved: {simResult.distance_saved_km} km</div>
-                <div className="text-slate-400">Efficiency Gain: +{simResult.efficiency_gain_pct}%</div>
+                <div className="text-emerald-400">Time saved (estimate): {fmt(simResult.duration_saved_min, ' min')}</div>
+                <div className="text-indigo-300">Distance saved: {fmt(simResult.distance_saved_km, ' km')}</div>
+                {simResult.distance_saved_km == null && (
+                  <div className="text-slate-500">No dispatch plan in the source data to compare against.</div>
+                )}
               </div>
             ) : (
               <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-lg">
@@ -381,11 +428,15 @@ export default function RouteInvestigationPage() {
                 <div className="flex items-center space-x-4">
                   <span className="text-slate-400">Service: {s.service_time_min} min</span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                    s.actual_sequence && s.actual_sequence !== s.planned_sequence
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-emerald-500/20 text-emerald-300'
+                    s.actual_sequence == null
+                      ? 'bg-slate-800 text-slate-400'
+                      : s.actual_sequence !== s.planned_sequence
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300'
                   }`}>
-                    {s.actual_sequence && s.actual_sequence !== s.planned_sequence ? `Moved to #${s.actual_sequence}` : 'On Sequence'}
+                    {s.actual_sequence == null
+                      ? 'Actual order unknown'
+                      : s.actual_sequence !== s.planned_sequence ? `Moved to #${s.actual_sequence}` : 'On Sequence'}
                   </span>
                 </div>
               </div>

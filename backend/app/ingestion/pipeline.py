@@ -4,7 +4,7 @@ import datetime
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 
 from app.core.config import settings
 from app.core.database import get_duckdb_connection
@@ -17,6 +17,34 @@ from app.models.models import (
     RouteMetric, RouteDeviation
 )
 from app.schemas.schemas import DataQualityReportSchema, IngestRequestSchema
+from app.analytics.deviation import RouteDeviationAnalyzer, distance_increase_pct, is_material_deviation
+
+# Files looked up in DATA_DIR, in order of preference: (filename, is_synthetic).
+# The bundled Mendeley file is a generated fixture; a real download goes in mendeley_planned_vs_actual.csv.
+DATASET_FILES = {
+    "AMAZON_LAST_MILE": [("amazon_last_mile.json", False), ("amazon_last_mile_sample.json", False)],
+    "MENDELEY_PLANNED_VS_ACTUAL": [("mendeley_planned_vs_actual.csv", False), ("mendeley_synthetic_fixture.csv", True)],
+}
+DATASET_LICENSES = {
+    "AMAZON_LAST_MILE": "CC BY-NC 4.0",
+    "MENDELEY_PLANNED_VS_ACTUAL": "CC BY 4.0",
+}
+
+
+def resolve_dataset_file(dataset_name: str, requested: Optional[str] = None) -> Tuple[Optional[str], bool]:
+    """Return (path, is_synthetic) for a dataset, or (None, True) when no file is present.
+
+    A requested file name is only looked up inside DATA_DIR, never as an arbitrary server path.
+    """
+    if requested:
+        path = os.path.join(settings.DATA_DIR, os.path.basename(requested))
+        return (path, "synthetic" in os.path.basename(requested)) if os.path.exists(path) else (None, True)
+    for filename, is_synthetic in DATASET_FILES.get(dataset_name, DATASET_FILES["MENDELEY_PLANNED_VS_ACTUAL"]):
+        path = os.path.join(settings.DATA_DIR, filename)
+        if os.path.exists(path):
+            return path, is_synthetic
+    return None, True
+
 
 class IngestionPipeline:
     def __init__(self, db_session: AsyncSession):
@@ -31,24 +59,14 @@ class IngestionPipeline:
         dataset_id = str(uuid.uuid4())
         started_at = datetime.datetime.now(datetime.timezone.utc)
 
-        file_path = request.file_path
-        if not file_path:
-            # Check default locations inside data directory
-            if request.dataset_name == "AMAZON_LAST_MILE":
-                sample_p = os.path.join(settings.DATA_DIR, "amazon_last_mile_sample.json")
-                orig_p = os.path.join(settings.DATA_DIR, "amazon_last_mile.json")
-                file_path = sample_p if os.path.exists(sample_p) else orig_p
-            else:
-                file_path = os.path.join(settings.DATA_DIR, "mendeley_planned_vs_actual.csv")
+        file_path, is_synthetic = resolve_dataset_file(request.dataset_name, request.file_path)
 
-        # Validate file existence
-        if not os.path.exists(file_path):
-            # Create synthetic test fixture if file missing, clearly labeled per spec
+        if file_path is None:
+            # No data file at all: fall back to the in-code fixture, clearly labeled
             sample_df = self._generate_fixture_df(request.dataset_name)
-            report = DataValidator.validate_dataset(sample_df, request.dataset_name, file_path)
+            report = DataValidator.validate_dataset(sample_df, request.dataset_name, None)
             report.issues.append("DATASET FILE MISSING: Using synthetic test fixture for schema validation.")
             canonical_routes = self._generate_fixture_canonical_routes(request.dataset_name)
-            is_synthetic = True
         else:
             # Parse real dataset
             if request.dataset_name == "AMAZON_LAST_MILE":
@@ -69,7 +87,8 @@ class IngestionPipeline:
                 } for r in canonical_routes
             ])
             report = DataValidator.validate_dataset(sample_df, request.dataset_name, file_path)
-            is_synthetic = False
+            if is_synthetic:
+                report.issues.append("SYNTHETIC FIXTURE: generated to match the published schema; not real delivery data.")
 
         # Create Dataset record
         dataset_record = Dataset(
@@ -77,7 +96,7 @@ class IngestionPipeline:
             name=request.dataset_name,
             source_url="https://registry.opendata.aws/amazon-last-mile-challenges/" if "AMAZON" in request.dataset_name else "https://data.mendeley.com/datasets/kkwgfvmtxn",
             doi="https://doi.org/10.17632/kkwgfvmtxn.1" if "MENDELEY" in request.dataset_name else None,
-            license="CC BY 4.0",
+            license="Generated fixture" if is_synthetic else DATASET_LICENSES.get(request.dataset_name, "Unknown"),
             version="1.0",
             download_timestamp=started_at,
             file_hash=report.provenance_hash,
@@ -120,12 +139,13 @@ class IngestionPipeline:
                 external_route_id=c_route.external_route_id,
                 driver_id=db_driver.id,
                 vehicle_id=c_route.vehicle_id or "VAN_01",
-                depot_location=c_route.depot_location or {"lat": 37.7749, "lng": -122.4194},
-                route_date=c_route.route_date or "2026-08-12",
-                planned_distance_km=c_route.planned_distance_km or 35.0,
-                actual_distance_km=c_route.actual_distance_km or 38.5,
-                planned_duration_min=c_route.planned_duration_min or 240.0,
-                actual_duration_min=c_route.actual_duration_min or 265.0,
+                # Unknown values stay None; downstream code reports them as unavailable.
+                depot_location=c_route.depot_location,
+                route_date=c_route.route_date,
+                planned_distance_km=c_route.planned_distance_km,
+                actual_distance_km=c_route.actual_distance_km,
+                planned_duration_min=c_route.planned_duration_min,
+                actual_duration_min=c_route.actual_duration_min,
                 total_stops=len(c_route.stops),
                 status="COMPLETED"
             )
@@ -146,7 +166,7 @@ class IngestionPipeline:
                     route_id=route_db_id,
                     external_stop_id=c_stop.stop_id,
                     planned_sequence=c_stop.planned_sequence,
-                    actual_sequence=c_stop.actual_sequence or c_stop.planned_sequence,
+                    actual_sequence=c_stop.actual_sequence,
                     lat=c_stop.lat,
                     lng=c_stop.lng,
                     address=c_stop.address or f"Stop Location #{c_stop.planned_sequence}",
@@ -155,53 +175,64 @@ class IngestionPipeline:
                 )
                 self.db.add(stop_obj)
 
-                # Package deliveries.
-                # delay_minutes is 0.0 when actual arrival times are unavailable.
-                # is_late is inferred from stop sequence reordering as a proxy;
-                # accurate lateness requires planned_arrival vs actual_arrival timestamps.
+                # Package deliveries. Lateness needs planned vs actual arrival timestamps,
+                # which neither bundled dataset has, so is_late stays unknown (None).
                 for pkg in c_stop.packages:
                     deliv_obj = Delivery(
                         id=str(uuid.uuid4()),
                         stop_id=stop_db_id,
                         package_id=pkg.package_id,
-                        weight_kg=pkg.weight_kg or 2.5,
-                        volume_m3=pkg.volume_m3 or 0.015,
+                        weight_kg=pkg.weight_kg,
+                        volume_m3=pkg.volume_m3,
                         priority="NORMAL",
-                        is_late=is_reordered,
-                        delay_minutes=0.0  # Set to 0.0; actual delay requires arrival timestamps
+                        is_late=None,
+                        delay_minutes=0.0  # Not measured; overview analytics treat 0.0 as "no data"
                     )
                     self.db.add(deliv_obj)
 
-            # Route Metrics
-            dist_var = round((c_route.actual_distance_km or 0.0) - (c_route.planned_distance_km or 0.0), 2)
-            dur_var = round((c_route.actual_duration_min or 0.0) - (c_route.planned_duration_min or 0.0), 2)
-            on_time_rate = round(max(0.0, 1.0 - (late_stops_count / max(1, len(c_route.stops)))), 2)
+            # Route metrics and deviation need outcome data: planned and actual distance/duration
+            # plus the actual visit order. Routes without it (e.g. the Amazon sample) get neither.
+            has_outcomes = (
+                None not in (c_route.planned_distance_km, c_route.actual_distance_km,
+                             c_route.planned_duration_min, c_route.actual_duration_min)
+                and c_route.planned_distance_km > 0
+                and bool(c_route.stops)
+                and all(s.actual_sequence is not None for s in c_route.stops)
+            )
+            if not has_outcomes:
+                continue
+
+            dist_var = round(c_route.actual_distance_km - c_route.planned_distance_km, 2)
+            dur_var = round(c_route.actual_duration_min - c_route.planned_duration_min, 2)
+            # Share of stops visited in their planned position (sequence adherence, not punctuality).
+            in_sequence_rate = round(max(0.0, 1.0 - (late_stops_count / max(1, len(c_route.stops)))), 2)
 
             route_metric = RouteMetric(
                 id=str(uuid.uuid4()),
                 route_id=route_db_id,
                 distance_variance_km=dist_var,
                 duration_variance_min=dur_var,
-                on_time_delivery_rate=on_time_rate,
+                on_time_delivery_rate=in_sequence_rate,
                 late_delivery_count=late_stops_count,
                 route_efficiency_score=round(max(50.0, 100.0 - (dist_var * 2) - (dur_var * 0.5)), 1)
             )
             self.db.add(route_metric)
 
-            # Route Deviation
-            dev_pct = round((dist_var / max(1.0, c_route.planned_distance_km or 1.0)) * 100.0, 1)
-            is_mat_dev = dev_pct > 10.0 or late_stops_count > 1
-            
+            similarity = RouteDeviationAnalyzer.sequence_similarity(
+                [s.planned_sequence for s in c_route.stops], [s.actual_sequence for s in c_route.stops]
+            )
+            dev_pct = distance_increase_pct(c_route.planned_distance_km, c_route.actual_distance_km)
+
             route_deviation = RouteDeviation(
                 id=str(uuid.uuid4()),
                 route_id=route_db_id,
-                sequence_similarity_index=round(1.0 - (late_stops_count / max(1, len(c_route.stops))), 2),
+                sequence_similarity_index=round(similarity, 3),
                 stop_reorder_count=late_stops_count,
                 additional_distance_km=max(0.0, dist_var),
                 additional_duration_min=max(0.0, dur_var),
                 deviation_percentage=dev_pct,
-                is_material_deviation=is_mat_dev,
-                explanation=f"{late_stops_count} stops reordered from planned sequence. Distance increased by {dist_var} km (+{dev_pct}%)."
+                is_material_deviation=is_material_deviation(dev_pct, similarity),
+                explanation=f"{late_stops_count} stops reordered from planned sequence. Distance changed by {dist_var:+} km ({dev_pct:+}%)."
             )
             self.db.add(route_deviation)
 

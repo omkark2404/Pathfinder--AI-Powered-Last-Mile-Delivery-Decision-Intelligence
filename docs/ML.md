@@ -4,13 +4,13 @@
 
 | Mode | Description |
 |---|---|
-| `synthetic_demo` | Default. 5-sample benchmark fixture. No real evaluation metrics available. |
-| `real` | Set after training on real Amazon/Mendeley data. Real metrics exposed. |
+| `synthetic_demo` | Default. Models fitted at startup on 5 hand-written rows. No evaluation metrics. |
+| `real` | Set when `train(..., data_mode="real")` is called. No API endpoint does this yet. |
 
 The current API always returns `data_mode: "synthetic_demo"` and
-`evaluation_status: "insufficient_data"` until real data is provided.
+`evaluation_status: "insufficient_data"`.
 
-## Temporal Leakage Prevention
+## Leakage Prevention (dispatch-time features)
 
 All features must be information available at dispatch time T₀ (route start):
 
@@ -40,7 +40,7 @@ sync with model training and inference.
 
 ## Model 1: ETA Delay Predictor (`ETAPredictionModel`)
 
-- **Task**: Predict `delay_minutes` (continuous)
+- **Task**: Predict route delay in minutes (actual − planned duration)
 - **Algorithm**: `GradientBoostingRegressor` (sklearn, n_estimators=50, max_depth=3, random_state=42)
 - **Baseline**: `LinearRegression` (sklearn)
 - **Version**: v1.3.0
@@ -49,7 +49,7 @@ sync with model training and inference.
 
 ## Model 2: Route Deviation Classifier (`RouteDeviationClassifier`)
 
-- **Task**: Binary prediction of `is_material_deviation` (0 / 1)
+- **Task**: Binary prediction of `is_material_deviation`: distance more than 10% over plan or Kendall-tau similarity below 0.85 (`backend/app/analytics/deviation.py`)
 - **Algorithm**: `RandomForestClassifier` (sklearn, n_estimators=30, max_depth=4, random_state=42)
 - **Version**: v1.2.0
 - **Evaluation metrics** (real-data mode): Precision, Recall, F1, PR-AUC
@@ -75,16 +75,12 @@ Risk Score (0..100) =
 | 51–75 | HIGH |
 | 76–100 | CRITICAL |
 
-## Enabling Real-Data Mode
+Routes without planned distance and duration (for example the Amazon sample) are not scored: their features would be defaults.
 
-1. Verify or place dataset files:
-   - `./data/amazon_last_mile_sample.json` (or full `./data/amazon_last_mile.json`)
+## Evaluating on Real Data
+
+1. Place the real datasets in `./data/` (see `data/README.md`):
+   - `./data/amazon_last_mile.json` (actual-sequence parsing is still to do)
    - `./data/mendeley_planned_vs_actual.csv`
-
-2. Trigger ingestion: `POST /api/v1/datasets/ingest`
-
-3. Train models on ingested data using `ETAPredictionModel.train(X, y, data_mode="real")`
-
-4. Evaluate: `ETAPredictionModel.evaluate(X_test, y_test)`
-
-5. Real metrics will appear at `GET /api/v1/metrics`
+2. Run `cd backend && python scripts/train_eval.py`. It ingests `data/`, cross-validates both models against baselines, and writes `docs/eval_results.json` with dataset provenance.
+3. Serving trained models from the API is not wired up yet: the API keeps the bootstrap models and reports `insufficient_data`.

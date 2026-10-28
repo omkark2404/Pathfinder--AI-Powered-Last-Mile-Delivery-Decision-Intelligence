@@ -42,7 +42,7 @@ class DatasetSchema(BaseSchema):
 
 class IngestRequestSchema(BaseModel):
     dataset_name: str # "AMAZON_LAST_MILE" or "MENDELEY_PLANNED_VS_ACTUAL"
-    file_path: Optional[str] = None # Path relative to data/ or absolute
+    file_path: Optional[str] = None # File name inside DATA_DIR; directory parts are ignored
 
 # --- Route & Stop Schemas ---
 class DeliverySchema(BaseSchema):
@@ -51,7 +51,7 @@ class DeliverySchema(BaseSchema):
     weight_kg: Optional[float] = None
     volume_m3: Optional[float] = None
     priority: str
-    is_late: bool
+    is_late: Optional[bool] = None  # None = unknown (no arrival timestamps in the source data)
     delay_minutes: float
 
 class StopSchema(BaseSchema):
@@ -228,11 +228,11 @@ class RecommendationDecisionSchema(BaseModel):
 class OverviewAnalyticsSchema(BaseSchema):
     total_routes: int
     total_deliveries: int
-    on_time_delivery_rate: float
+    on_time_delivery_rate: float  # share of stops visited in planned order (no arrival timestamps)
     late_delivery_rate: float
-    avg_delay_minutes: float
-    p90_delay_minutes: float
-    p95_delay_minutes: float
+    avg_delay_minutes: Optional[float] = None  # None when delay was never measured
+    p90_delay_minutes: Optional[float] = None
+    p95_delay_minutes: Optional[float] = None
     avg_route_efficiency_pct: float
     route_deviation_rate: float
     high_risk_routes_count: int

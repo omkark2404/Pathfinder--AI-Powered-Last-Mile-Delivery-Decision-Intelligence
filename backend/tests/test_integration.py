@@ -28,25 +28,7 @@ from app.decisions.engine import DispatchDecisionEngine
 from app.analytics.delivery import DeliveryAnalytics
 
 
-# =========================================================================
-# Shared in-memory DB fixture
-# =========================================================================
-
-@pytest_asyncio.fixture
-async def mem_session():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        future=True,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
-    )
-    async with session_factory() as session:
-        yield session
-    await engine.dispose()
+# The shared in-memory `mem_session` fixture lives in conftest.py.
 
 
 # =========================================================================
@@ -238,8 +220,10 @@ class TestDispatchDecisionEngine:
 # =========================================================================
 
 @pytest.mark.asyncio
-async def test_synthetic_ingestion_creates_routes(mem_session):
-    """Ingesting a synthetic fixture must create at least one Route and Dataset."""
+async def test_synthetic_ingestion_creates_routes(mem_session, monkeypatch, tmp_path):
+    """With no data files present, ingestion falls back to the in-code synthetic fixture."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "DATA_DIR", str(tmp_path))
     pipeline = IngestionPipeline(mem_session)
     dataset, run, report = await pipeline.run_ingestion(
         IngestRequestSchema(dataset_name="AMAZON_LAST_MILE")
@@ -256,7 +240,7 @@ async def test_synthetic_ingestion_creates_routes(mem_session):
 
 @pytest.mark.asyncio
 async def test_ingestion_dataset_is_synthetic_labeled(mem_session):
-    """Synthetic fixture must set is_synthetic=True."""
+    """The bundled Mendeley-schema fixture file must be labeled is_synthetic=True."""
     pipeline = IngestionPipeline(mem_session)
     dataset, _, _ = await pipeline.run_ingestion(
         IngestRequestSchema(dataset_name="MENDELEY_PLANNED_VS_ACTUAL")
@@ -375,7 +359,8 @@ async def test_health_endpoint_data_mode():
     data = resp.json()
     assert "data_mode" in data
     assert "data_mode_note" in data
-    assert data["data_mode"] in ("real", "synthetic_demo")
+    assert data["data_mode"] in ("synthetic_demo", "bundled_samples", "public_datasets")
+    assert set(data["data_sources"]) == {"AMAZON_LAST_MILE", "MENDELEY_PLANNED_VS_ACTUAL"}
 
 
 @pytest.mark.asyncio

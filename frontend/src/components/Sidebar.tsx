@@ -17,6 +17,8 @@ import {
   Settings,
   Truck
 } from 'lucide-react';
+import { DATA_MODE_LABELS } from '@/lib/api';
+import { useHealth } from '@/lib/useHealth';
 
 const navItems = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
@@ -34,6 +36,7 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { health, error } = useHealth();
 
   return (
     <aside className="w-64 glass-panel border-r border-slate-800 flex flex-col h-screen fixed left-0 top-0 z-30">
@@ -74,10 +77,14 @@ export default function Sidebar() {
       {/* System Status Footer */}
       <div className="p-4 border-t border-slate-800">
         <div className="flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="text-[11px] text-slate-400 font-mono">Engine: Operational</span>
+          <span className={`w-2 h-2 rounded-full ${health ? 'bg-emerald-500' : error ? 'bg-rose-500' : 'bg-slate-500'}`}></span>
+          <span className="text-[11px] text-slate-400 font-mono">
+            {health ? 'API connected' : error ? 'API unreachable' : 'Connecting…'}
+          </span>
         </div>
-        <div className="text-[10px] text-slate-500 mt-1 font-mono">Public Real-World Data Mode</div>
+        <div className="text-[10px] text-slate-500 mt-1 font-mono" title={health?.data_mode_note}>
+          {health ? DATA_MODE_LABELS[health.data_mode] : '—'}
+        </div>
       </div>
     </aside>
   );

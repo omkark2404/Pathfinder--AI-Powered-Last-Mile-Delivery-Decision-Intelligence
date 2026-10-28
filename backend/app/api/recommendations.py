@@ -10,46 +10,30 @@ from app.core.database import get_db
 from app.models.models import Route, Stop, Recommendation, AuditLog
 from app.schemas.schemas import RecommendationSchema, RecommendationDecisionSchema
 from app.decisions.engine import DispatchDecisionEngine
-from app.ml.features import FeatureEngineer
-from app.ml.eta_model import ETAPredictionModel
-from app.ml.deviation_model import RouteDeviationClassifier
-from app.risk.scorer import DeliveryRiskScorer
+from app.ml.registry import score_route
 
 router = APIRouter(prefix="/recommendations", tags=["Recommendations & Decisions"])
-
-eta_model = ETAPredictionModel()
-dev_classifier = RouteDeviationClassifier()
 
 
 @router.get("", response_model=List[RecommendationSchema])
 async def list_recommendations(db: AsyncSession = Depends(get_db)):
     """
     Returns all stored recommendations.
-    If none exist yet, generates an initial set for the first 5 routes.
+    If none exist yet, generates one per route that has the planning data to be scored.
     """
     res = await db.execute(select(Recommendation))
     recs = res.scalars().all()
 
     if not recs:
-        # Generate initial recommendations for active routes on first call
-        r_stmt = (
-            select(Route)
-            .options(selectinload(Route.stops), selectinload(Route.driver))
-            .limit(5)
-        )
-        r_res = await db.execute(r_stmt)
-        routes = r_res.scalars().all()
+        r_stmt = select(Route).options(selectinload(Route.stops), selectinload(Route.driver))
+        routes = (await db.execute(r_stmt)).scalars().all()
         for r in routes:
-            feats = FeatureEngineer.extract_route_features(r, r.driver, r.stops)
-            delay, late = eta_model.predict_delay(feats)
-            dev = dev_classifier.predict_deviation_probability(feats)
-            score, level = DeliveryRiskScorer.calculate_risk(
-                delay, late, dev,
-                feats["time_window_pressure"],
-                feats["route_complexity_score"],
-            )
+            scored = score_route(r, r.driver, r.stops)
+            if scored is None:
+                continue
             rec = DispatchDecisionEngine.generate_recommendation(
-                r, r.stops, score, level, delay, dev
+                r, r.stops, scored["composite_risk_score"], scored["risk_level"],
+                scored["predicted_delay_min"], scored["deviation_probability"],
             )
             db.add(rec)
         await db.commit()

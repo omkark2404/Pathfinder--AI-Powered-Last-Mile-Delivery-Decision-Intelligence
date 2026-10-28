@@ -15,14 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 
 from app.core.database import get_db
-from app.ml.eta_model import ETAPredictionModel
-from app.ml.deviation_model import RouteDeviationClassifier
+from app.ml.registry import eta_model, dev_classifier
 
 router = APIRouter(tags=["ML Models & Evaluation"])
-
-# Module-level singletons — initialized once per process.
-eta_model = ETAPredictionModel()
-dev_classifier = RouteDeviationClassifier()
 
 
 @router.get("/models", response_model=List[Dict[str, Any]])

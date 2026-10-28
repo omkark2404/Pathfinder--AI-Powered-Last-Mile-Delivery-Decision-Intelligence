@@ -19,8 +19,9 @@ async def optimize_route(route_id: str, req: OptimizeRouteRequestSchema, db: Asy
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result = VRPOptimizer.optimize_route(route, route.stops, weights=req.objective_weights)
-    return result
+    if not route.stops:
+        raise HTTPException(status_code=422, detail="Route has no stops to optimize")
+    return VRPOptimizer.optimize_route(route, route.stops, weights=req.objective_weights)
 
 @router.post("/{route_id}/simulate")
 async def simulate_scenario(route_id: str, req: ScenarioRequestSchema, db: AsyncSession = Depends(get_db)):
@@ -30,6 +31,8 @@ async def simulate_scenario(route_id: str, req: ScenarioRequestSchema, db: Async
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
+    if not route.stops:
+        raise HTTPException(status_code=422, detail="Route has no stops to simulate")
     params = {
         "removed_stop_id": req.removed_stop_id,
         "vehicle_count": req.vehicle_count

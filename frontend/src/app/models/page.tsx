@@ -33,7 +33,7 @@ export default function ModelsPage() {
     <div>
       <Header
         title="Machine Learning Models & Evaluation Metrics"
-        subtitle="Supervised Models, Evaluation Benchmarks & Temporal Leakage Prevention"
+        subtitle="Prototype models: training status and how to run the offline evaluation"
       />
 
       <div className="p-8 space-y-8">
@@ -43,11 +43,11 @@ export default function ModelsPage() {
             <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
             <div className="text-xs space-y-1">
               <div className="font-bold flex items-center space-x-2">
-                <span>SYNTHETIC DEMO MODE — REAL DATASET FILES NOT FOUND</span>
+                <span>PROTOTYPE MODELS — FITTED ON 5 HAND-WRITTEN ROWS</span>
                 <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-200">synthetic_demo</span>
               </div>
               <p className="text-amber-300/80">
-                Evaluation metrics report <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">insufficient_data</code> because real Amazon Last Mile and Mendeley dataset files are not placed in <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">./data/</code>. No fake numbers are displayed. Place raw dataset files in <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">./data/</code> and run dataset ingestion to train and compute real metrics.
+                At startup both models are fitted on five hand-written example rows, so the API reports <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">insufficient_data</code> instead of metrics. Offline cross-validation runs with <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">python backend/scripts/train_eval.py</code> (results in <code className="bg-slate-900/60 px-1 py-0.5 rounded font-mono">docs/eval_results.json</code>); with the bundled files it can only evaluate on the synthetic Mendeley-schema fixture.
               </p>
             </div>
           </div>
@@ -73,15 +73,15 @@ export default function ModelsPage() {
                   <span className="text-amber-400 font-bold">insufficient_data</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Sample Count:</span>
-                  <span className="text-slate-200">{etaModel?.evaluation_sample_count || 5} (min 10 required)</span>
+                  <span>Training samples:</span>
+                  <span className="text-slate-200">{etaModel?.training_sample_count ?? 'n/a'} (hand-written bootstrap)</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Data Mode:</span>
-                  <span className="text-amber-300 font-bold">{etaModel?.data_mode || 'synthetic_demo'}</span>
+                  <span className="text-amber-300 font-bold">{etaModel?.data_mode ?? 'n/a'}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-800">
-                  Metrics will be automatically calculated when trained on ≥10 samples from real datasets.
+                  API metrics appear only after the model is trained and evaluated on at least 10 held-out routes.
                 </p>
               </div>
             ) : (
@@ -114,8 +114,8 @@ export default function ModelsPage() {
             )}
 
             <div className="text-xs text-slate-400 font-mono space-y-1">
-              <p>Canonical Features: 9 features (stop_count, planned_distance, planned_duration, driver_adherence, TW_pressure, complexity)</p>
-              <p>Leakage Prevention: Strictly temporal data ≤ T₀ (no actual arrival times used as features)</p>
+              <p>Features: 9 dispatch-time features (backend/app/ml/features.py); 3 are constant on the bundled data</p>
+              <p>Leakage prevention: only planned fields are used; actual distance, duration and arrival never are</p>
             </div>
           </div>
 
@@ -138,15 +138,15 @@ export default function ModelsPage() {
                   <span className="text-amber-400 font-bold">insufficient_data</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Sample Count:</span>
-                  <span className="text-slate-200">{devModel?.evaluation_sample_count || 5} (min 10 required)</span>
+                  <span>Training samples:</span>
+                  <span className="text-slate-200">{devModel?.training_sample_count ?? 'n/a'} (hand-written bootstrap)</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Data Mode:</span>
-                  <span className="text-amber-300 font-bold">{devModel?.data_mode || 'synthetic_demo'}</span>
+                  <span className="text-amber-300 font-bold">{devModel?.data_mode ?? 'n/a'}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-800">
-                  Metrics will be automatically calculated when trained on ≥10 samples from real datasets.
+                  API metrics appear only after the model is trained and evaluated on at least 10 held-out routes.
                 </p>
               </div>
             ) : (
@@ -180,7 +180,7 @@ export default function ModelsPage() {
 
             <div className="text-xs text-slate-400 font-mono space-y-1">
               <p>Target: Binary classification (is_material_deviation: sequence similarity &lt; 0.85 or distance variance &gt; 10%)</p>
-              <p>Evaluation: Stratified split with sklearn average_precision_score (PR-AUC)</p>
+              <p>Evaluation: offline stratified 5-fold CV in backend/scripts/train_eval.py (PR-AUC vs prevalence baseline)</p>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Header from '@/components/Header';
-import { fetchApi, RouteItem } from '@/lib/api';
+import { fetchApi, fmt, RouteItem } from '@/lib/api';
 import Link from 'next/link';
 import { MapPin, Search, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
@@ -73,8 +73,9 @@ export default function RoutesPage() {
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {filteredRoutes.map((r) => {
-                  const similarity = r.deviation?.sequence_similarity_index || 1.0;
-                  const isMaterial = r.deviation?.is_material_deviation || false;
+                  // null when the source data has no actual visit order for this route
+                  const similarity = r.deviation ? r.deviation.sequence_similarity_index : null;
+                  const isMaterial = r.deviation?.is_material_deviation ?? null;
                   return (
                     <tr key={r.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono font-semibold text-indigo-400">
@@ -87,37 +88,43 @@ export default function RoutesPage() {
                       </td>
                       <td className="p-4 text-slate-300 font-medium">{r.total_stops}</td>
                       <td className="p-4 font-mono">
-                        <span className="text-slate-300">{r.planned_distance_km}</span>
+                        <span className="text-slate-300">{fmt(r.planned_distance_km)}</span>
                         <span className="text-slate-500 mx-1">→</span>
-                        <span className={r.actual_distance_km > r.planned_distance_km ? 'text-amber-400 font-semibold' : 'text-slate-300'}>
-                          {r.actual_distance_km} km
+                        <span className={(r.actual_distance_km ?? 0) > (r.planned_distance_km ?? Infinity) ? 'text-amber-400 font-semibold' : 'text-slate-300'}>
+                          {fmt(r.actual_distance_km, ' km')}
                         </span>
                       </td>
                       <td className="p-4 font-mono">
-                        <span className="text-slate-300">{r.planned_duration_min}</span>
+                        <span className="text-slate-300">{fmt(r.planned_duration_min)}</span>
                         <span className="text-slate-500 mx-1">→</span>
-                        <span className={r.actual_duration_min > r.planned_duration_min ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
-                          {r.actual_duration_min} min
+                        <span className={(r.actual_duration_min ?? 0) > (r.planned_duration_min ?? Infinity) ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
+                          {fmt(r.actual_duration_min, ' min')}
                         </span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className={`h-full ${similarity < 0.8 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                              style={{ width: `${similarity * 100}%` }}
-                            ></div>
+                        {similarity === null ? (
+                          <span className="font-mono text-[11px] text-slate-500">n/a</span>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <div className="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full ${similarity < 0.85 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                style={{ width: `${similarity * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="font-mono text-[11px] text-slate-300">{(similarity * 100).toFixed(0)}%</span>
                           </div>
-                          <span className="font-mono text-[11px] text-slate-300">{(similarity * 100).toFixed(0)}%</span>
-                        </div>
+                        )}
                       </td>
                       <td className="p-4">
                         <span className={`px-2.5 py-1 rounded text-[10px] font-bold ${
-                          isMaterial
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          isMaterial === null
+                            ? 'bg-slate-800 text-slate-400'
+                            : isMaterial
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         }`}>
-                          {isMaterial ? 'DEVIATED' : 'ADHERENT'}
+                          {isMaterial === null ? 'NOT MEASURABLE' : isMaterial ? 'DEVIATED' : 'WITHIN THRESHOLD'}
                         </span>
                       </td>
                       <td className="p-4 text-right">

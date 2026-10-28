@@ -22,10 +22,10 @@ services:
         value: "production"
       - key: SECRET_KEY
         generateValue: true
+      # main.py refuses to start in production with "*"; must match the frontend's URL.
       - key: ALLOWED_ORIGINS
-        value: "*"
-      - key: DATA_DIR
-        value: "./data"
+        value: "https://lastmile-frontend.onrender.com"
+      # DATA_DIR is not set: it defaults to the repository's data/ folder.
 
   # ------------------------------------------------------------
   # Next.js Frontend Web Service (Free Tier)

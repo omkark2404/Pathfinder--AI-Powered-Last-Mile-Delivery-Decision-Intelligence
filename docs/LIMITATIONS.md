@@ -2,54 +2,37 @@
 
 ## Known Limitations
 
-### 1. Preliminary ML Metrics vs. Full Production Ingestion
+### 1. Prototype models, synthetic outcome data
 
-> [!CAUTION]
-> **PRELIMINARY EVALUATION NOTICE**
-> The metrics reported in the evaluation documentation are computed on a very small committed benchmark sample (13 Amazon routes, and a 30-route *synthetic fixture* mimicking the Mendeley dataset). These results **must not** be treated as production-representative. Before deploying or making business claims, the models **must be re-validated** against the full datasets (the 9,184 Amazon routes and the authentic Mendeley download) using `make eval-full`.
+The API models are fitted on 5 hand-written rows and report `insufficient_data`. The only bundled outcome data is the synthetic Mendeley-schema fixture (`data/mendeley_synthetic_fixture.csv`). Offline cross-validation (`backend/scripts/train_eval.py`) runs on that fixture and verifies the pipeline only. See `docs/EVALUATION.md`.
 
-The repository includes a 13-route benchmark sample (`amazon_last_mile_sample.json`) and a 30-route synthetic planned-vs-actual dataset (`mendeley_planned_vs_actual.csv`) to enable immediate out-of-the-box operation and automated testing.
-The full 9,184-route Amazon Last Mile dataset is not bundled due to GitHub repository size limits and must be downloaded from AWS Open Data Registry for large-scale training.
+### 2. The Amazon sample has no outcomes
 
-When dataset files are absent, the application gracefully operates in **synthetic_demo** mode using an in-memory test fixture clearly labeled (`is_synthetic=True` on Dataset records, `data_mode="synthetic_demo"` in the ML model API).
+`data/amazon_last_mile_sample.json` (13 real routes, CC BY-NC 4.0) has stop locations, packages and service times, but no actual visit order, distances or durations. Those routes are used for optimization only: they are not compared against a plan, risk-scored, or used for training. The official actual-sequence file is not parsed yet.
 
-### 2. ML Models: Limited Test Sample Size
+### 3. No lateness data
 
-Models evaluated on the 13-route benchmark sample return `evaluation_status: "low_sample_size"` with metrics rounded to 1 decimal place. When operated in synthetic_demo mode, no evaluation metrics are calculated and `/api/v1/metrics` returns `evaluation_status: "insufficient_data"` and `metrics: null` — never fabricated values.
+Neither bundled dataset has planned vs actual arrival timestamps. `Delivery.is_late` is stored as unknown, delay statistics are reported as unavailable, and the overview's "Stops in Planned Order" measures sequence adherence, not punctuality.
 
-### 3. Static Traffic Representation
+### 4. Optimizer assumptions
 
-The dataset does not include live GPS telemetry. Traffic factors are modeled
-via service time variance and historical travel durations only.
+The solver minimizes straight-line (Haversine) distance. Road networks, time windows, vehicle capacity and duration limits are not modeled, and duration savings are scaled estimates. The 2-second time limit is enough for tens of stops; the ~190-stop Amazon routes hit it, so their tours are the best found, not proven optimal. The multi-vehicle scenario is a rough approximation.
 
-### 4. Geographic Scope
+### 5. Geographic scope
 
-Public datasets originate from U.S. metropolitan regions (Amazon) and specific
-European urban courier networks (Mendeley). Model behavior in other geographies
-is untested.
+The Amazon sample covers U.S. metropolitan stations; the fixture's coordinates are around Oslo. Behaviour on other geographies is untested.
 
-### 5. No Live Production Dispatch Integration
+### 6. No live dispatch integration
 
-The platform is a decision-intelligence overlay with human-in-the-loop audit
-logging. It does not directly control vehicle hardware or dispatch systems.
+The platform is a decision-support overlay with human-in-the-loop audit logging. It does not control vehicles or dispatch systems.
 
-### 6. OR-Tools VRP Solver Assumptions
+### 7. DuckDB export is write-only
 
-The optimization solver uses Haversine straight-line distance as a proxy for
-actual road distance. Real road networks will produce different results. The
-solver uses a 2-second time limit per route; complex routes may find only
-heuristic (not globally optimal) solutions.
+Each ingestion replaces the DuckDB `routes_olap` table (`CREATE OR REPLACE`), so it only holds the most recently ingested dataset, and nothing queries it yet.
 
-### 7. DuckDB OLAP Table is Append-Only on Re-Ingestion
+### 8. No authentication
 
-`CREATE TABLE IF NOT EXISTS ... AS SELECT * FROM df` creates the DuckDB
-`routes_olap` table only on first ingestion. User-triggered re-ingestion via
-the API does not update the DuckDB table. This is a known limitation; a
-full OLAP refresh on re-ingestion is a planned improvement.
-
-### 8. Microservice Scope & Authentication Boundary
-
-The current service is architected as an internal operational microservice designed to run inside a private VPC behind an API Gateway or Reverse Proxy (e.g. Envoy, Kong, or Traefik). Token authentication and RBAC are intended to be terminated at the edge gateway layer before traffic reaches internal decision endpoints.
+All endpoints, including ingestion, predictions and dispatcher decisions, are unauthenticated, and the audit `user_id` is supplied by the client. Put the service behind an authenticating gateway before exposing it beyond a demo.
 
 ### 9. Default SECRET_KEY
 

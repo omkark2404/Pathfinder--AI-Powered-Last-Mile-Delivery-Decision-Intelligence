@@ -1,0 +1,74 @@
+{
+  "generated_by": "python backend/scripts/train_eval.py",
+  "data_dir": "data",
+  "sklearn_version": "1.9.1",
+  "datasets": [
+    {
+      "name": "AMAZON_LAST_MILE",
+      "is_synthetic": false,
+      "routes": 13,
+      "routes_with_outcomes": 0
+    },
+    {
+      "name": "MENDELEY_PLANNED_VS_ACTUAL",
+      "is_synthetic": true,
+      "routes": 30,
+      "routes_with_outcomes": 30
+    }
+  ],
+  "evaluated_routes": 30,
+  "evaluated_on_synthetic_data": true,
+  "status": "evaluated",
+  "constant_features": [
+    "driver_adherence_rate",
+    "driver_historical_delay_min",
+    "time_window_pressure"
+  ],
+  "eta_delay_minutes": {
+    "target": "actual_duration_min - planned_duration_min (route level)",
+    "cv": "KFold(n_splits=5, shuffle=True, random_state=42)",
+    "mae": {
+      "gradient_boosting": {
+        "mean": 30.267,
+        "std": 16.896
+      },
+      "linear_regression": {
+        "mean": 35.172,
+        "std": 8.057
+      },
+      "mean_baseline": {
+        "mean": 33.206,
+        "std": 4.92
+      }
+    }
+  },
+  "route_deviation": {
+    "target": "is_material_deviation: distance > 10% over plan or Kendall-tau similarity < 0.85",
+    "status": "evaluated",
+    "cv": "StratifiedKFold(n_splits=5, shuffle=True, random_state=42)",
+    "positives": 11,
+    "metrics": {
+      "pr_auc": {
+        "mean": 0.73,
+        "std": 0.058
+      },
+      "pr_auc_baseline_prevalence": {
+        "mean": 0.367,
+        "std": 0.067
+      },
+      "precision": {
+        "mean": 0.6,
+        "std": 0.374
+      },
+      "recall": {
+        "mean": 0.367,
+        "std": 0.194
+      },
+      "f1": {
+        "mean": 0.433,
+        "std": 0.226
+      }
+    }
+  },
+  "warning": "Evaluated on a synthetic fixture. These numbers verify the pipeline; they are not real-world model performance."
+}
